@@ -1,10 +1,7 @@
 [workspace]
 resolver = "3"
-members = [
-    "engine",
-    "cli",
-    "gui"
-]
+members = ["cli", "desktop", "engine"]
 
 [workspace.dependencies]
+thiserror = "2"
 tokio = { version = "1", features = ["full"] }

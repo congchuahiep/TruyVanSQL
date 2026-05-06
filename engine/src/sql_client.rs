@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::config::DatabaseConfig;
 use crate::driver::{self, DatabaseDriver};
 use crate::error::EngineError;
@@ -32,8 +34,9 @@ use crate::schema::{TableBrief, TableInfo};
 ///     println!("  {} ({})", col.name, col.data_type);
 /// }
 /// ```
+#[derive(Clone)]
 pub struct SqlClient {
-    driver: Box<dyn DatabaseDriver>,
+    driver: Arc<dyn DatabaseDriver>,
 }
 
 impl SqlClient {
@@ -48,7 +51,9 @@ impl SqlClient {
     /// - `EngineError::UnsupportedDatabase` nếu database type chưa có driver.
     pub async fn connect(config: DatabaseConfig) -> Result<Self, EngineError> {
         let driver = driver::create(&config).await?;
-        Ok(Self { driver })
+        Ok(Self {
+            driver: Arc::from(driver),
+        })
     }
 
     /// Thực thi SQL query bất kỳ (DDL, DML, DQL).

@@ -1,17 +1,13 @@
-mod action;
-mod app;
-mod panel;
-mod query_table_delegate;
-mod service;
-mod state;
-mod util;
-mod window_state;
+pub mod action;
+pub mod connection;
+pub mod shared;
+pub mod tab_sql_editor;
+pub mod tab_table_viewer;
+pub mod workspace;
 
-use app::AppView;
 use gpui::*;
 use gpui_component::Root;
-
-use crate::action::{datagrid, toolbar};
+use workspace::Workspace;
 
 #[tokio::main]
 async fn main() {
@@ -21,18 +17,19 @@ async fn main() {
         gpui_component::init(cx);
 
         cx.bind_keys([
-            KeyBinding::new("ctrl-n", toolbar::NewDatabase, Some("app")),
-            KeyBinding::new("ctrl-o", toolbar::OpenFile, Some("app")),
-            KeyBinding::new("ctrl-shift-m", toolbar::UseInMemory, Some("app")),
-            KeyBinding::new("ctrl-c", datagrid::Copy, Some("datagrid")),
+            KeyBinding::new("ctrl-n", action::toolbar::NewDatabase, Some("app")),
+            KeyBinding::new("ctrl-o", action::toolbar::OpenFile, Some("app")),
+            KeyBinding::new("ctrl-shift-m", action::toolbar::UseInMemory, Some("app")),
+            KeyBinding::new("ctrl-enter", action::query::ExecuteQuery, Some("app")),
+            KeyBinding::new("enter", action::grid::StartEdit, Some("data-grid")),
+            KeyBinding::new("enter", action::grid::ConfirmEdit, Some("cell-editor")),
+            KeyBinding::new("escape", action::grid::CancelEdit, Some("cell-editor")),
         ]);
 
         cx.activate(true);
 
-        let window_bounds = match window_state::WindowState::load() {
-            Some(state) => state.window_bounds,
-            None => WindowBounds::Windowed(Bounds::centered(None, size(px(800.0), px(600.0)), cx)),
-        };
+        let window_bounds =
+            WindowBounds::Windowed(Bounds::centered(None, size(px(800.0), px(600.0)), cx));
 
         cx.spawn(async move |cx| {
             cx.open_window(
@@ -43,11 +40,10 @@ async fn main() {
                         height: px(480.0),
                     }),
                     window_background: WindowBackgroundAppearance::MicaBackdrop,
-
                     ..Default::default()
                 },
                 |window, cx| {
-                    let view = cx.new(|cx| AppView::new(window, cx));
+                    let view = cx.new(|cx| Workspace::new(window, cx));
                     cx.new(|cx| Root::new(view, window, cx))
                 },
             )

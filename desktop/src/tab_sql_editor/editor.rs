@@ -1,29 +1,24 @@
-use gpui::prelude::*;
 use gpui::*;
 use gpui_component::input::{Input, InputState};
 use gpui_component::label::Label;
 use gpui_component::{ActiveTheme, h_flex, v_flex};
 
-pub struct SqlEditor {
+pub struct QueryEditor {
     sql_input: Entity<InputState>,
 }
 
-impl SqlEditor {
+impl QueryEditor {
     pub fn new(sql_input: Entity<InputState>) -> Self {
         Self { sql_input }
     }
 }
 
-impl Render for SqlEditor {
+impl Render for QueryEditor {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
-            .id("sql-editor")
-            .overflow_y_scroll()
-            .w_full()
-            .flex_1()
+            .size_full()
             .child(
                 h_flex()
-                    .w_full()
                     .px_3()
                     .py_1()
                     .border_b_1()
@@ -39,7 +34,7 @@ impl Render for SqlEditor {
                 div()
                     .w_full()
                     .flex_1()
-                    .p_2()
+                    .p_1()
                     .bg(cx.theme().background)
                     .child(Input::new(&self.sql_input).h_full()),
             )
