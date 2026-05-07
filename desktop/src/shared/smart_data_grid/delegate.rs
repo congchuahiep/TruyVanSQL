@@ -65,7 +65,7 @@ impl TableDelegate for GridDelegate {
             && row == row_ix
             && col == col_ix
         {
-            let wrapper = div().p_neg_2().w_full().h_full().flex().items_center();
+            let wrapper = div().px_neg_2().py_neg_1().size_full();
 
             return wrapper
                 .key_context("cell-editor")
@@ -73,13 +73,12 @@ impl TableDelegate for GridDelegate {
                     Input::new(&self.cell_editor)
                         .appearance(false)
                         .px_2()
-                        .w_full()
+                        .size_full()
                         .text_base()
-                        .bg(gpui::rgb(0xffffff))
+                        .border_2()
+                        .border_color(rgb(0x2b7fff))
                         .when(has_error, |this| {
-                            this.border_2()
-                                .border_color(gpui::red())
-                                .bg(gpui::rgb(0xffc9c9))
+                            this.border_color(gpui::red()).bg(rgb(0xffc9c9))
                         }),
                 )
                 .into_any_element();

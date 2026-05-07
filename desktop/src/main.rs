@@ -21,9 +21,10 @@ async fn main() {
             KeyBinding::new("ctrl-o", action::toolbar::OpenFile, Some("app")),
             KeyBinding::new("ctrl-shift-m", action::toolbar::UseInMemory, Some("app")),
             KeyBinding::new("ctrl-enter", action::query::ExecuteQuery, Some("app")),
-            KeyBinding::new("enter", action::grid::StartEdit, Some("data-grid")),
-            KeyBinding::new("enter", action::grid::ConfirmEdit, Some("cell-editor")),
-            KeyBinding::new("escape", action::grid::CancelEdit, Some("cell-editor")),
+            KeyBinding::new("ctrl-c", action::datagrid::CopyCell, Some("data-grid")),
+            KeyBinding::new("enter", action::datagrid::StartEdit, Some("data-grid")),
+            KeyBinding::new("enter", action::datagrid::ConfirmEdit, Some("cell-editor")),
+            KeyBinding::new("escape", action::datagrid::CancelEdit, Some("cell-editor")),
         ]);
 
         cx.activate(true);

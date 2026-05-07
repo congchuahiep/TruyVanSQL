@@ -1,4 +1,5 @@
 pub mod delegate;
+mod script_generator;
 pub mod state;
 
 use std::usize;
@@ -10,7 +11,7 @@ use gpui_component::table::{DataTable, TableDelegate, TableEvent, TableState};
 use gpui_component::{ActiveTheme, Disableable, IconName, Sizable, h_flex, v_flex};
 use thiserror::Error;
 
-use crate::action::grid::{CancelEdit, ConfirmEdit, StartEdit};
+use crate::action::datagrid::{CancelEdit, ConfirmEdit, CopyCell, StartEdit, SubmitChanges};
 use crate::connection::model::DatabaseConnection;
 use crate::shared::smart_data_grid::state::EditingState;
 use engine::{Column, Row};
@@ -127,10 +128,13 @@ impl SmartDataGrid {
         let state = &delegate.state;
 
         if !state.is_editable()
-            || state
-                .editing_state
-                .as_ref()
-                .is_some_and(|EditingState { has_error, .. }| *has_error)
+            || state.editing_state.as_ref().is_some_and(
+                |EditingState {
+                     row,
+                     col,
+                     has_error,
+                 }| (*row == row_ix && *col == col_ix) || *has_error,
+            )
         {
             return;
         }
@@ -250,6 +254,49 @@ impl SmartDataGrid {
         println!("SmartDataGrid: Đã bấm nút Refresh");
     }
 
+    /// Copy cell hoặc row đang selected vào clipboard.
+    /// - Nếu có cell selected → copy cell value
+    /// - Nếu có row selected → copy cả row (tab-separated)
+    fn on_copy_cell(&mut self, _: &CopyCell, _window: &mut Window, cx: &mut Context<Self>) {
+        let table = self.table.read(cx);
+
+        // TODO: Triển khai khả năng copy cột
+        // TODO: Tối ưu việc copy row theo nhiều loại định dạng khác nhau: CSV, TSV, JSON,...
+        if let Some(row_ix) = table.selected_row() {
+            let delegate = table.delegate();
+            let columns_count = delegate.columns_count(cx);
+            let mut cells = Vec::with_capacity(columns_count);
+            for col_ix in 0..columns_count {
+                cells.push(delegate.cell_text(row_ix, col_ix, cx))
+            }
+            let text = cells.join("\t");
+            cx.write_to_clipboard(ClipboardItem::new_string(text));
+            return;
+        }
+
+        if let Some((row_ix, col_ix)) = table.selected_cell() {
+            let text = table.delegate().cell_text(row_ix, col_ix, cx);
+            cx.write_to_clipboard(ClipboardItem::new_string(text));
+            return;
+        }
+    }
+
+    fn on_submit_changes(
+        &mut self,
+        _: &SubmitChanges,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let state = &self.table.read(cx).delegate().state;
+        match script_generator::ScriptGenerator::try_new(state) {
+            Ok(generator) => {
+                let script = generator.generate();
+                println!("script: \n{script}")
+            }
+            Err(error) => eprintln!("error: {error}"),
+        }
+    }
+
     fn on_start_edit(&mut self, _: &StartEdit, window: &mut Window, cx: &mut Context<Self>) {
         if let Some((r, c)) = self.table.read(cx).selected_cell() {
             self.activate_editor(r, c, window, cx);
@@ -268,10 +315,14 @@ impl SmartDataGrid {
         };
     }
 
-    fn on_cancel_edit(&mut self, _: &CancelEdit, _window: &mut Window, cx: &mut Context<Self>) {
+    fn on_cancel_edit(&mut self, _: &CancelEdit, window: &mut Window, cx: &mut Context<Self>) {
         self.table.update(cx, |table, cx| {
+            if let Some(EditingState { row, col, .. }) = table.delegate().state.editing_state {
+                table.set_selected_cell(row, col, cx);
+            }
+
+            table.focus_handle(cx).focus(window, cx);
             table.delegate_mut().state.editing_state = None;
-            cx.notify();
         });
     }
 
@@ -316,10 +367,13 @@ impl SmartDataGrid {
             )
             .child(div().w(px(1.0)).h_4().bg(cx.theme().border))
             .child(
-                Button::new("btn-save")
+                Button::new("btn-submit-changes")
                     .ghost()
                     .xsmall()
                     .icon(IconName::Check)
+                    .on_click(|_, window, cx| {
+                        window.dispatch_action(Box::new(SubmitChanges), cx);
+                    })
                     .disabled(!has_changes || is_loading),
             )
             .child(
@@ -341,23 +395,29 @@ impl SmartDataGrid {
 
 impl Render for SmartDataGrid {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        v_flex().size_full().child(self.render_toolbar(cx)).child(
-            div()
-                .key_context("data-grid")
-                .on_action(cx.listener(Self::on_confirm_edit))
-                .on_action(cx.listener(Self::on_cancel_edit))
-                .on_action(cx.listener(Self::on_start_edit))
-                .flex_1()
-                .w_full()
-                .min_w_0()
-                .min_h_0()
-                .overflow_hidden()
-                .child(
-                    DataTable::new(&self.table)
-                        .stripe(true)
-                        .scrollbar_visible(true, true),
-                ),
-        )
+        v_flex()
+            .key_context("data-grid-container")
+            .on_action(cx.listener(Self::on_submit_changes))
+            .on_action(cx.listener(Self::on_copy_cell))
+            .size_full()
+            .child(self.render_toolbar(cx))
+            .child(
+                div()
+                    .key_context("data-grid")
+                    .on_action(cx.listener(Self::on_confirm_edit))
+                    .on_action(cx.listener(Self::on_cancel_edit))
+                    .on_action(cx.listener(Self::on_start_edit))
+                    .flex_1()
+                    .w_full()
+                    .min_w_0()
+                    .min_h_0()
+                    .overflow_hidden()
+                    .child(
+                        DataTable::new(&self.table)
+                            .stripe(true)
+                            .scrollbar_visible(true, true),
+                    ),
+            )
     }
 }
 

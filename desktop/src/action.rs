@@ -15,12 +15,10 @@ pub mod query {
 
 pub mod datagrid {
     use gpui::actions;
-    actions!(datagrid, [Copy]);
-}
-
-pub mod grid {
-    use gpui::actions;
-    actions!(grid, [ConfirmEdit, CancelEdit, StartEdit]);
+    actions!(
+        grid,
+        [CopyCell, ConfirmEdit, CancelEdit, StartEdit, SubmitChanges]
+    );
 }
 
 pub mod app {
