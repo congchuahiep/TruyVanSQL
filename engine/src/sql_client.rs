@@ -1,10 +1,9 @@
+use std::ops::Deref;
 use std::sync::Arc;
 
 use crate::config::DatabaseConfig;
 use crate::driver::{self, DatabaseDriver};
 use crate::error::EngineError;
-use crate::result::QueryResult;
-use crate::schema::{TableBrief, TableInfo};
 
 /// Entry point chính của SQL Client.
 ///
@@ -39,6 +38,14 @@ pub struct SqlClient {
     driver: Arc<dyn DatabaseDriver>,
 }
 
+impl Deref for SqlClient {
+    type Target = dyn DatabaseDriver;
+
+    fn deref(&self) -> &Self::Target {
+        &*self.driver
+    }
+}
+
 impl SqlClient {
     /// Tạo SqlClient mới từ config.
     ///
@@ -56,76 +63,14 @@ impl SqlClient {
         })
     }
 
-    /// Thực thi SQL query bất kỳ (DDL, DML, DQL).
-    ///
-    /// Tự động phân biệt loại query và trả về `QueryResult` phù hợp.
-    ///
-    /// # Returns
-    ///
-    /// - `QueryResult::Execution` cho INSERT, UPDATE, DELETE, CREATE, DROP, ...
-    /// - `QueryResult::Query` cho SELECT, PRAGMA, EXPLAIN, WITH ...
-    pub async fn execute(&self, query: &str) -> Result<QueryResult, EngineError> {
-        self.driver.execute(query).await
-    }
-
-    /// Kiểm tra kết nối còn sống không.
-    ///
-    /// Trả về `Ok(())` nếu kết nối OK, `Err` nếu không.
-    pub async fn ping(&self) -> Result<(), EngineError> {
-        self.driver.ping().await
-    }
-
-    /// Lấy tên loại database đang kết nối (ví dụ: "SQLite", "PostgreSQL").
-    pub fn database_type(&self) -> &'static str {
-        self.driver.database_type()
-    }
-
-    // === Schema Introspection ===
-
-    /// Liệt kê tất cả tables và views trong database.
-    ///
-    /// Trả về `Vec<TableBrief>` — nhẹ, chỉ chứa name và kind.
-    /// Dùng cho sidebar listing.
-    pub async fn list_tables(&self) -> Result<Vec<TableBrief>, EngineError> {
-        self.driver.list_tables().await
-    }
-
-    /// Liệt kê tất cả views trong database.
-    ///
-    /// Tách riêng vì sidebar có thể hiển thị views ở section riêng.
-    pub async fn list_views(&self) -> Result<Vec<String>, EngineError> {
-        self.driver.list_views().await
-    }
-
-    /// Lấy thông tin chi tiết của một table.
-    ///
-    /// Trả về `TableInfo` chứa columns, primary key, foreign keys, indexes.
-    /// Dùng khi user click vào table trên sidebar.
-    ///
-    /// # Errors
-    ///
-    /// Trả về `EngineError::Schema` nếu table không tồn tại.
-    pub async fn get_table_info(&self, table_name: &str) -> Result<TableInfo, EngineError> {
-        self.driver.get_table_info(table_name).await
-    }
-
-    /// Đếm số dòng trong table.
-    ///
-    /// Dùng `SELECT COUNT(*)` — có thể chậm với table lớn.
-    /// Dùng cho sidebar hiển thị "N rows" bên cạnh tên table.
-    ///
-    /// # Errors
-    ///
-    /// Trả về `EngineError::Schema` nếu table không tồn tại.
-    pub async fn get_table_row_count(&self, table_name: &str) -> Result<i64, EngineError> {
-        self.driver.get_table_row_count(table_name).await
-    }
+    /// This funtion do absolutely nothing
+    pub fn do_nothing(&self) {}
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::result::Value;
+    use crate::result::{QueryResult, Value};
     use crate::schema::TableKind;
 
     fn sqlite_memory_config() -> DatabaseConfig {

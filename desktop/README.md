@@ -1,9 +1,3 @@
-# Note
-
-- Hiện tại DataGrid chưa thể bấm enter để vào editable cell được, và sau khi commit_edit xong thì nó không focus vào bảng lại (khiến cho không thể di chuyển selected cell được)
-
-- Thay vì input trong cell thì ta có thể mở một popup tại vị trí của cell đó và trong popup có input giá trị mới của cell sẽ hay hơn (cho phép khung edit linh hoạt hơn, hiển thị lỗi validate tốt hơn) (ta làm cách này cũng là do Table của gpui_component khó để custom style của select trong bảng)
-
 # Desktop Crate - SQL Client Architecture
 
 Crate `desktop` chứa giao diện người dùng (GUI) và logic quản lý trạng thái của ứng dụng SQL Client, được xây dựng bằng framework [GPUI](https://gpui.rs/).

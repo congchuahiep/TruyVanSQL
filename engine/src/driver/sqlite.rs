@@ -2,7 +2,7 @@ use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
 use sqlx::{Column as SqlxColumn, Row, TypeInfo};
 
 use crate::config::DatabaseConfig;
-use crate::driver::DatabaseDriver;
+use crate::driver::{DatabaseDriver, SqlDialect};
 use crate::error::EngineError;
 use crate::result::{Column, QueryResult, Row as ResultRow, Value};
 use crate::schema::{
@@ -129,10 +129,7 @@ impl SqliteDriver {
     }
 
     /// Lấy foreign keys qua PRAGMA foreign_key_list.
-    async fn get_foreign_keys(
-        &self,
-        table_name: &str,
-    ) -> Result<Vec<ForeignKeyInfo>, EngineError> {
+    async fn get_foreign_keys(&self, table_name: &str) -> Result<Vec<ForeignKeyInfo>, EngineError> {
         let query = format!("PRAGMA foreign_key_list('{table_name}')");
         let rows = sqlx::query(&query)
             .fetch_all(&self.pool)
@@ -144,7 +141,13 @@ impl SqliteDriver {
         // Mỗi FK có thể có nhiều rows (nhiều columns) — group by id
         let mut fk_map: std::collections::HashMap<
             i64,
-            (String, Vec<String>, Vec<String>, Option<String>, Option<String>),
+            (
+                String,
+                Vec<String>,
+                Vec<String>,
+                Option<String>,
+                Option<String>,
+            ),
         > = std::collections::HashMap::new();
 
         for row in &rows {
@@ -222,6 +225,28 @@ impl SqliteDriver {
     }
 }
 
+impl SqlDialect for SqliteDriver {
+    fn quote_identifier(&self, identifier: &str) -> String {
+        format!("\"{}\"", identifier)
+    }
+
+    fn format_value(&self, value: &str, data_type: &str) -> String {
+        if value == "NULL" {
+            "NULL".into()
+        } else {
+            let dt = data_type.to_uppercase();
+            if (dt.contains("INT") || dt.contains("REAL") || dt.contains("FLOAT"))
+                && value
+                    .chars()
+                    .all(|c| c.is_digit(10) || c == '.' || c == '-')
+            {
+                value.into()
+            } else {
+                format!("'{}'", value.replace("'", "''"))
+            }
+        }
+    }
+}
 #[async_trait::async_trait]
 impl DatabaseDriver for SqliteDriver {
     async fn execute(&self, query: &str) -> Result<QueryResult, EngineError> {
@@ -280,12 +305,10 @@ impl DatabaseDriver for SqliteDriver {
     }
 
     async fn list_views(&self) -> Result<Vec<String>, EngineError> {
-        let rows = sqlx::query(
-            "SELECT name FROM sqlite_master WHERE type = 'view' ORDER BY name",
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| EngineError::Schema(e.to_string()))?;
+        let rows = sqlx::query("SELECT name FROM sqlite_master WHERE type = 'view' ORDER BY name")
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| EngineError::Schema(e.to_string()))?;
 
         let views: Vec<String> = rows
             .iter()
@@ -354,9 +377,7 @@ fn is_dql(query: &str) -> bool {
 
 /// Convert một `sqlx::SqliteRow` thành `result::Row`.
 fn convert_row(row: &sqlx::sqlite::SqliteRow, num_columns: usize) -> ResultRow {
-    let values: Vec<Option<Value>> = (0..num_columns)
-        .map(|i| convert_value(row, i))
-        .collect();
+    let values: Vec<Option<Value>> = (0..num_columns).map(|i| convert_value(row, i)).collect();
 
     ResultRow { values }
 }
@@ -381,6 +402,10 @@ fn convert_value(row: &sqlx::sqlite::SqliteRow, idx: usize) -> Option<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        DataChangeset,
+        schema::{ColumnData, RowDelete, RowUpdate},
+    };
 
     async fn create_driver() -> SqliteDriver {
         let config = DatabaseConfig::sqlite("sqlite::memory:");
@@ -821,5 +846,44 @@ mod tests {
                 _ => panic!("Expected Execution"),
             }
         }
+    }
+
+    #[test]
+    fn test_generate_changeset_script() {
+        let config = DatabaseConfig::sqlite("sqlite::memory:");
+        // Cần tokio runtime để tạo driver, nhưng generate_changeset_script không async
+        // Tuy nhiên SqliteDriver::new là async.
+        // Ta có thể mock hoặc sử dụng block_on nếu cần, nhưng ở đây ta có thể tạo driver đơn giản.
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let driver = rt.block_on(async { SqliteDriver::new(&config).await.unwrap() });
+
+        let changeset = DataChangeset {
+            table_name: "users".to_string(),
+            updates: vec![RowUpdate {
+                pk_conditions: vec![ColumnData {
+                    column_name: "id".to_string(),
+                    value: "1".to_string(),
+                    data_type: "INTEGER".to_string(),
+                }],
+                changes: vec![ColumnData {
+                    column_name: "name".to_string(),
+                    value: "Alice O'Neil".to_string(),
+                    data_type: "TEXT".to_string(),
+                }],
+            }],
+            deletes: vec![RowDelete {
+                pk_conditions: vec![ColumnData {
+                    column_name: "id".to_string(),
+                    value: "2".to_string(),
+                    data_type: "INTEGER".to_string(),
+                }],
+            }],
+        };
+
+        let script = driver.generate_changeset_script(&changeset);
+        assert_eq!(
+            script,
+            "UPDATE \"users\" SET \"name\" = 'Alice O''Neil' WHERE \"id\" = 1;\nDELETE FROM \"users\" WHERE \"id\" = 2;\n"
+        );
     }
 }

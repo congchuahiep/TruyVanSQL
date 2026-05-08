@@ -3,7 +3,20 @@ pub mod sqlite;
 use crate::config::{DatabaseConfig, DatabaseKind};
 use crate::error::EngineError;
 use crate::result::QueryResult;
-use crate::schema::{TableBrief, TableInfo};
+use crate::schema::{DataChangeset, TableBrief, TableInfo};
+
+/// Cung cấp các quy tắc định dạng SQL (Dialect) cho từng loại Database
+pub trait SqlDialect {
+    /// Bọc định dang (tên bảng, tên cột)
+    ///
+    /// # Example
+    /// - `"name"`: (SQLite)
+    /// - `[name]`: (MSSQL)
+    fn quote_identifier(&self, identifier: &str) -> String;
+
+    /// Định dạng giá trị dựa trên kiểu dữ liệu
+    fn format_value(&self, value: &str, data_type: &str) -> String;
+}
 
 /// Trait đại diện cho một database driver.
 ///
@@ -37,8 +50,10 @@ use crate::schema::{TableBrief, TableInfo};
 /// }
 /// ```
 #[async_trait::async_trait]
-pub trait DatabaseDriver: Send + Sync {
-    // === Query Execution ===
+pub trait DatabaseDriver: SqlDialect + Send + Sync {
+    // =======================
+    // =   Query Execution   =
+    // =======================
 
     /// Thực thi SQL query bất kỳ (DDL, DML, DQL).
     ///
@@ -58,7 +73,76 @@ pub trait DatabaseDriver: Send + Sync {
     /// Dùng cho logging, display, debug — không dùng cho logic.
     fn database_type(&self) -> &'static str;
 
-    // === Schema Introspection ===
+    /// Sinh SQL script từ data-changeset (DML).
+    ///
+    /// Mỗi driver tự định nghĩa cách format SQL (Dialect) phù hợp.
+    fn generate_changeset_script(&self, changeset: &DataChangeset) -> String {
+        let mut script = String::new();
+
+        // Xử lý UPDATEs
+        for update in &changeset.updates {
+            let set_clause = update
+                .changes
+                .iter()
+                .map(|c| {
+                    format!(
+                        "{} = {}",
+                        self.quote_identifier(&c.column_name),
+                        self.format_value(&c.value, &c.data_type)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            let where_clause = update
+                .pk_conditions
+                .iter()
+                .map(|c| {
+                    format!(
+                        "{} = {}",
+                        self.quote_identifier(&c.column_name),
+                        self.format_value(&c.value, &c.data_type)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(" AND ");
+
+            script.push_str(&format!(
+                "UPDATE {} SET {} WHERE {};\n",
+                self.quote_identifier(&changeset.table_name),
+                set_clause,
+                where_clause
+            ));
+        }
+
+        // Xử lý DELETEs
+        for delete in &changeset.deletes {
+            let where_clause = delete
+                .pk_conditions
+                .iter()
+                .map(|c| {
+                    format!(
+                        "{} = {}",
+                        self.quote_identifier(&c.column_name),
+                        self.format_value(&c.value, &c.data_type)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(" AND ");
+
+            script.push_str(&format!(
+                "DELETE FROM {} WHERE {};\n",
+                self.quote_identifier(&changeset.table_name),
+                where_clause
+            ));
+        }
+
+        script
+    }
+
+    // ============================
+    // =   Schema Introspection   =
+    // ============================
 
     /// Liệt kê tất cả tables và views trong database.
     ///
@@ -92,10 +176,7 @@ pub trait DatabaseDriver: Send + Sync {
     async fn get_table_row_count(&self, table_name: &str) -> Result<i64, EngineError>;
 }
 
-/// Factory function — tạo driver phù hợp dựa trên config.
-///
 /// Đây là **entry point duy nhất** để tạo driver mới.
-/// Caller không cần biết implementation cụ thể, chỉ cần `Box<dyn DatabaseDriver>`.
 ///
 /// # Thêm database mới
 ///

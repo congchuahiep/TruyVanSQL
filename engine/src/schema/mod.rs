@@ -96,3 +96,6 @@ pub struct TableInfo {
     /// Danh sách indexes
     pub indexes: Vec<IndexInfo>,
 }
+
+pub mod modification;
+pub use modification::{ColumnData, DataChangeset, RowDelete, RowUpdate};
