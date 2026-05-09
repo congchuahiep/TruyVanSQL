@@ -1,8 +1,9 @@
+use assets::AppIcon;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::tab::{Tab, TabBar as GpuiTabBar};
-use gpui_component::{ActiveTheme, IconName, Sizable, h_flex};
+use gpui_component::{ActiveTheme, Sizable, h_flex};
 
 use crate::workspace::tab_manager::TabManager;
 
@@ -23,14 +24,7 @@ impl Render for TabBar {
         let active_index = manager.active_index();
         let tabs = manager.tabs();
 
-        let mut tab_bar = GpuiTabBar::new("app-tabs")
-            .underline()
-            .small()
-            .w_full()
-            .h_8()
-            .border_b_1()
-            .border_color(cx.theme().border)
-            .bg(cx.theme().background);
+        let mut tab_bar = GpuiTabBar::new("app-tabs").w_full().border_0();
 
         if let Some(index) = active_index {
             tab_bar = tab_bar.selected_index(index);
@@ -47,12 +41,13 @@ impl Render for TabBar {
             let tab_manager_handle = self.tab_manager.clone();
 
             tab_bar = tab_bar.child(
-                Tab::new().label(tab_title).suffix(
+                Tab::new().label(tab_title).cursor_pointer().suffix(
                     h_flex().child(
                         Button::new(format!("close-tab-{}", i))
                             .ghost()
                             .xsmall()
-                            .icon(IconName::Inbox) // Sẽ thay bằng nút X
+                            .mr_1()
+                            .icon(AppIcon::X)
                             .on_click(move |_e: &gpui::ClickEvent, _window, cx| {
                                 cx.stop_propagation();
                                 tab_manager_handle.update(cx, |s, cx| s.close_tab(i, cx));

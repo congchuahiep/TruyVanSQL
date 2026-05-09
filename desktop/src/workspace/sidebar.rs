@@ -1,7 +1,8 @@
+use assets::AppIcon;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_component::ActiveTheme;
 use gpui_component::sidebar::{Sidebar, SidebarGroup, SidebarMenu, SidebarMenuItem};
-use gpui_component::{ActiveTheme, IconName};
 
 use crate::action::sidebar::RefreshDatabase;
 use crate::connection::model::ConnectionStatus;
@@ -41,7 +42,6 @@ impl Render for Explorer {
 
         Sidebar::new("explorer-sidebar")
             .w(px(260.0))
-            .bg(theme.background)
             .border_r_1()
             .border_color(theme.border)
             .header(
@@ -69,7 +69,7 @@ impl Render for Explorer {
                         let tab_manager_for_map = tab_manager.clone();
 
                         SidebarMenuItem::new(conn_name.clone())
-                            .icon(IconName::Folder)
+                            .icon(AppIcon::Database)
                             .on_click(cx.listener(move |_, _, _, cx| {
                                 cloned_conn_1.update(cx, |c, cx| {
                                     if c.tables.is_empty() && c.status == ConnectionStatus::Online {
@@ -86,7 +86,7 @@ impl Render for Explorer {
                                 let tab_manager_for_click = tab_manager_for_map.clone();
 
                                 SidebarMenuItem::new(table_name.clone())
-                                    .icon(IconName::File)
+                                    .icon(AppIcon::Table)
                                     .on_click(move |_, window, cx| {
                                         // Khởi tạo TableViewerTab (Full DataGrid) khi click vào table
                                         let tab = cx.new(|cx| {

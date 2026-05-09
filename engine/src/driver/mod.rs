@@ -6,6 +6,9 @@ use crate::result::QueryResult;
 use crate::schema::{DataChangeset, TableBrief, TableInfo};
 
 /// Cung cấp các quy tắc định dạng SQL (Dialect) cho từng loại Database
+///
+/// Triển khai trait này cho từng loại Database để định dạng SQL phù hợp, cho phép sinh script chuẩn
+/// cho các thao tác như tạo bảng, thêm dữ liệu, cập nhật, xóa.
 pub trait SqlDialect {
     /// Bọc định dang (tên bảng, tên cột)
     ///
@@ -74,8 +77,6 @@ pub trait DatabaseDriver: SqlDialect + Send + Sync {
     fn database_type(&self) -> &'static str;
 
     /// Sinh SQL script từ data-changeset (DML).
-    ///
-    /// Mỗi driver tự định nghĩa cách format SQL (Dialect) phù hợp.
     fn generate_changeset_script(&self, changeset: &DataChangeset) -> String {
         let mut script = String::new();
 

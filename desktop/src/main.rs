@@ -11,7 +11,7 @@ use workspace::Workspace;
 
 #[tokio::main]
 async fn main() {
-    let app = gpui_platform::application().with_assets(gpui_component_assets::Assets);
+    let app = gpui_platform::application().with_assets(assets::Assets);
 
     app.run(|cx| {
         gpui_component::init(cx);

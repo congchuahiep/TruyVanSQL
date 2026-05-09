@@ -4,11 +4,12 @@ pub mod state;
 
 use std::usize;
 
+use assets::AppIcon;
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::input::InputState;
 use gpui_component::table::{DataTable, TableDelegate, TableEvent, TableState};
-use gpui_component::{ActiveTheme, Disableable, IconName, Sizable, h_flex, v_flex};
+use gpui_component::{ActiveTheme, Disableable, Sizable, StyledExt, h_flex, v_flex};
 use thiserror::Error;
 
 use crate::action::datagrid::{CancelEdit, CommitChanges, ConfirmEdit, CopyCell, StartEdit};
@@ -344,41 +345,43 @@ impl SmartDataGrid {
 
         h_flex()
             .w_full()
-            .px_2()
-            .py_1()
-            .gap_2()
+            .p_1()
+            .gap_px()
             .border_b_1()
             .border_color(cx.theme().border)
-            .bg(cx.theme().muted)
             .child(
                 Button::new("btn-refresh")
                     .ghost()
-                    .xsmall()
-                    .icon(IconName::Play)
+                    .size_6()
+                    .cursor_pointer()
+                    .icon(AppIcon::Refresh)
                     .disabled(is_loading)
                     .on_click(cx.listener(Self::on_refresh)),
             )
-            .child(div().w(px(1.0)).h_4().bg(cx.theme().border))
+            .child(div().w_px().h_4().mx_px().bg(cx.theme().border))
             .child(
                 Button::new("btn-add-row")
                     .ghost()
-                    .xsmall()
-                    .icon(IconName::Plus)
+                    .size_6()
+                    .cursor_pointer()
+                    .icon(AppIcon::Plus)
                     .disabled(!is_editable || is_loading),
             )
             .child(
                 Button::new("btn-delete-row")
                     .ghost()
-                    .xsmall()
-                    .icon(IconName::Minus)
+                    .size_6()
+                    .cursor_pointer()
+                    .icon(AppIcon::Minus)
                     .disabled(!is_editable || is_loading),
             )
-            .child(div().w(px(1.0)).h_4().bg(cx.theme().border))
+            .child(div().w_px().h_4().mx_px().bg(cx.theme().border))
             .child(
                 Button::new("btn-submit-changes")
                     .ghost()
-                    .xsmall()
-                    .icon(IconName::Check)
+                    .size_6()
+                    .cursor_pointer()
+                    .icon(AppIcon::Check)
                     .on_click(|_, window, cx| {
                         window.dispatch_action(Box::new(CommitChanges), cx);
                     })
@@ -387,8 +390,9 @@ impl SmartDataGrid {
             .child(
                 Button::new("btn-cancel")
                     .ghost()
-                    .xsmall()
-                    .icon(IconName::Inbox)
+                    .size_6()
+                    .cursor_pointer()
+                    .icon(AppIcon::X)
                     .disabled(!has_changes || is_loading),
             )
             .child(div().flex_1())
@@ -423,6 +427,7 @@ impl Render for SmartDataGrid {
                     .child(
                         DataTable::new(&self.table)
                             .stripe(true)
+                            .bordered(false)
                             .scrollbar_visible(true, true),
                     ),
             )
