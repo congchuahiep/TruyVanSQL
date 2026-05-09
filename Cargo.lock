@@ -1325,11 +1325,15 @@ dependencies = [
  "gpui",
  "gpui-component",
  "gpui_platform",
+ "raw-window-handle",
  "rfd",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "windows 0.61.3",
 ]
 
 [[package]]

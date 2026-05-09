@@ -47,6 +47,7 @@ impl Render for TabBar {
                             .ghost()
                             .xsmall()
                             .mr_1()
+                            .cursor_pointer()
                             .icon(AppIcon::X)
                             .on_click(move |_e: &gpui::ClickEvent, _window, cx| {
                                 cx.stop_propagation();

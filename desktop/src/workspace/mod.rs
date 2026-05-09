@@ -6,7 +6,7 @@ pub mod title_bar;
 
 use gpui::prelude::*;
 use gpui::*;
-use gpui_component::{h_flex, v_flex};
+use gpui_component::{ActiveTheme, h_flex, v_flex};
 
 use crate::action::query::{ExecuteQuery, NewQuery};
 use crate::action::toolbar::{NewDatabase, OpenFile, UseInMemory};
@@ -146,20 +146,24 @@ impl Render for Workspace {
             .id("workspace")
             .child(self.title_bar.clone())
             .child(
-                h_flex().flex_1().min_w_0().min_h_0().child(self.sidebar.clone()).child(
-                    v_flex()
-                        .flex_1()
-                        .size_full()
-                        .min_w_0()
-                        .min_h_0()
-                        .child(self.tab_bar.clone())
-                        .child(
-                            div()
-                                .flex_1()
-                                .flex_grow()
-                                .min_w_0()
-                                .min_h_0()
-                                .child(if let Some(tab) = active_tab {
+                h_flex()
+                    .flex_1()
+                    .min_w_0()
+                    .min_h_0()
+                    .child(self.sidebar.clone())
+                    .child(
+                        v_flex()
+                            .flex_1()
+                            .size_full()
+                            .min_w_0()
+                            .min_h_0()
+                            .border_t_1()
+                            .border_l_1()
+                            .border_color(cx.theme().border)
+                            .bg(cx.theme().background.alpha(0.4))
+                            .child(self.tab_bar.clone())
+                            .child(div().flex_1().flex_grow().min_w_0().min_h_0().child(
+                                if let Some(tab) = active_tab {
                                     tab.view().into_any_element()
                                 } else {
                                     v_flex()
@@ -170,9 +174,9 @@ impl Render for Workspace {
                                         .child("Chưa có tab nào được mở.")
                                         .child("Chọn một database ở Explorer để bắt đầu.")
                                         .into_any_element()
-                                }),
-                        ),
-                ),
+                                },
+                            )),
+                    ),
             )
     }
 }

@@ -1,5 +1,5 @@
-use gpui::{AnyElement, App, Entity, IntoElement, RenderOnce, SharedString, Window, px};
-use gpui_component::{Icon, IconNamed, Sizable};
+use gpui::{AnyElement, App, Entity, IntoElement, RenderOnce, SharedString, Window};
+use gpui_component::{Icon, IconNamed};
 use gpui_component_macros::icon_named;
 
 icon_named!(AppIcon, "./icons");

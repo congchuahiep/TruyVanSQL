@@ -1,20 +1,23 @@
-pub mod action;
-pub mod connection;
-pub mod shared;
-pub mod tab_sql_editor;
-pub mod tab_table_viewer;
-pub mod workspace;
+mod action;
+mod connection;
+mod shared;
+mod tab_sql_editor;
+mod tab_table_viewer;
+mod theme;
+mod workspace;
 
 use gpui::*;
-use gpui_component::Root;
+use gpui_component::{ActiveTheme as _, Root};
 use workspace::Workspace;
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::fmt::init();
     let app = gpui_platform::application().with_assets(assets::Assets);
 
     app.run(|cx| {
         gpui_component::init(cx);
+        crate::theme::init(cx);
 
         cx.bind_keys([
             KeyBinding::new("ctrl-n", action::toolbar::NewDatabase, Some("app")),
@@ -44,6 +47,7 @@ async fn main() {
                     ..Default::default()
                 },
                 |window, cx| {
+                    crate::theme::mica::sync_mica_dark_mode(window, cx.theme().is_dark());
                     let view = cx.new(|cx| Workspace::new(window, cx));
                     cx.new(|cx| Root::new(view, window, cx))
                 },
