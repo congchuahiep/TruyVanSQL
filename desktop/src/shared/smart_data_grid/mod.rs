@@ -9,7 +9,7 @@ use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::input::InputState;
 use gpui_component::table::{DataTable, TableDelegate, TableEvent, TableState};
-use gpui_component::{ActiveTheme, Disableable, Sizable, StyledExt, h_flex, v_flex};
+use gpui_component::{ActiveTheme, Disableable, h_flex, v_flex};
 use thiserror::Error;
 
 use crate::action::datagrid::{CancelEdit, CommitChanges, ConfirmEdit, CopyCell, StartEdit};
@@ -349,6 +349,7 @@ impl SmartDataGrid {
             .gap_px()
             .border_b_1()
             .border_color(cx.theme().border)
+            .bg(cx.theme().background.alpha(1.))
             .child(
                 Button::new("btn-refresh")
                     .ghost()

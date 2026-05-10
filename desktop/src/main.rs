@@ -1,4 +1,5 @@
 mod action;
+mod component;
 mod connection;
 mod shared;
 mod tab_sql_editor;
@@ -43,10 +44,21 @@ async fn main() {
                         width: px(640.0),
                         height: px(480.0),
                     }),
+                    titlebar: Some(TitlebarOptions {
+                        title: None,
+                        appears_transparent: true,
+                        traffic_light_position: Some(point(px(9.0), px(9.0))),
+                    }),
+                    #[cfg(target_os = "linux")]
+                    window_decorations: Some(WindowDecorations::Client),
+                    #[cfg(target_os = "linux")]
+                    window_background: WindowBackgroundAppearance::Transparent,
+                    #[cfg(target_os = "windows")]
                     window_background: WindowBackgroundAppearance::MicaBackdrop,
                     ..Default::default()
                 },
                 |window, cx| {
+                    #[cfg(target_os = "windows")]
                     crate::theme::mica::sync_mica_dark_mode(window, cx.theme().is_dark());
                     let view = cx.new(|cx| Workspace::new(window, cx));
                     cx.new(|cx| Root::new(view, window, cx))

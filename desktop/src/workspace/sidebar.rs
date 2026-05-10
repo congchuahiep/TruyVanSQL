@@ -1,10 +1,10 @@
 use assets::AppIcon;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_component::ActiveTheme;
-use gpui_component::sidebar::{Sidebar, SidebarGroup, SidebarMenu, SidebarMenuItem};
+use gpui_component::sidebar::Sidebar;
 
 use crate::action::sidebar::RefreshDatabase;
+use crate::component::sidebar_menu_item::SidebarMenuItem;
 use crate::connection::model::ConnectionStatus;
 use crate::connection::store::ConnectionStore;
 use crate::tab_table_viewer::TableViewerTab;
@@ -33,17 +33,12 @@ impl Explorer {
 
 impl Render for Explorer {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
-
-        let tab_manager = self.tab_manager.clone();
-
         let store = self.connection_store.read(cx);
         let connections = store.connections().to_vec();
 
         Sidebar::new("explorer-sidebar")
             .w(px(260.0))
-            .border_r_1()
-            .border_color(theme.border)
+            .border_0()
             .header(
                 div()
                     .flex()
@@ -57,19 +52,24 @@ impl Render for Explorer {
                             .text_xs(),
                     ),
             )
-            .child(
-                SidebarGroup::new("DATABASES").child(SidebarMenu::new().children(
-                    connections.into_iter().map(|conn_entity| {
+            .children(
+                connections
+                    .into_iter()
+                    .enumerate()
+                    .map(|(_i, conn_entity)| {
                         let conn = conn_entity.read(cx);
                         let conn_name = conn.name.clone();
                         let tables = conn.tables.clone();
+                        let is_loading = conn.status == ConnectionStatus::Connecting;
 
                         let cloned_conn_1 = conn_entity.clone();
                         let cloned_conn_2 = conn_entity.clone();
-                        let tab_manager_for_map = tab_manager.clone();
+                        let tab_manager_for_map = self.tab_manager.clone();
 
                         SidebarMenuItem::new(conn_name.clone())
                             .icon(AppIcon::Database)
+                            .expand_on_double_click(true)
+                            .loading(is_loading)
                             .on_click(cx.listener(move |_, _, _, cx| {
                                 cloned_conn_1.update(cx, |c, cx| {
                                     if c.tables.is_empty() && c.status == ConnectionStatus::Online {
@@ -88,7 +88,6 @@ impl Render for Explorer {
                                 SidebarMenuItem::new(table_name.clone())
                                     .icon(AppIcon::Table)
                                     .on_click(move |_, window, cx| {
-                                        // Khởi tạo TableViewerTab (Full DataGrid) khi click vào table
                                         let tab = cx.new(|cx| {
                                             TableViewerTab::new(
                                                 conn_for_click.clone(),
@@ -97,13 +96,16 @@ impl Render for Explorer {
                                                 cx,
                                             )
                                         });
-                                        tab_manager_for_click.update(cx, |s, cx| {
-                                            s.open_tab(tab, cx);
-                                        });
+                                        tab_manager_for_click.update(
+                                            cx,
+                                            |s: &mut TabManager, cx| {
+                                                s.open_tab(tab, cx);
+                                            },
+                                        );
                                     })
                             }))
+                            .collapsed(false)
                     }),
-                )),
             )
     }
 }

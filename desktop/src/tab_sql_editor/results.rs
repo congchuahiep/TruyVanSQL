@@ -42,9 +42,13 @@ impl QueryResults {
                 }
             }
             cx.notify();
-        }).detach();
+        })
+        .detach();
 
-        Self { session, table_state }
+        Self {
+            session,
+            table_state,
+        }
     }
 }
 
@@ -79,7 +83,7 @@ impl Render for QueryResults {
                 .child(
                     DataTable::new(&self.table_state)
                         .stripe(true)
-                        .scrollbar_visible(true, true)
+                        .scrollbar_visible(true, true),
                 )
                 .into_any_element(),
 
@@ -121,7 +125,14 @@ impl Render for QueryResults {
                             .text_color(cx.theme().muted_foreground),
                     ),
             )
-            .child(content)
+            .child(
+                v_flex()
+                    .flex_1()
+                    .min_size_0()
+                    .size_full()
+                    .p_2()
+                    .child(content),
+            )
             .into_any_element()
     }
 }

@@ -3,7 +3,7 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::tab::{Tab, TabBar as GpuiTabBar};
-use gpui_component::{ActiveTheme, Sizable, h_flex};
+use gpui_component::{Sizable, h_flex};
 
 use crate::workspace::tab_manager::TabManager;
 
