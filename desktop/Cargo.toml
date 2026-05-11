@@ -7,7 +7,7 @@ edition = "2024"
 assets = { workspace = true }
 engine = { workspace = true }
 futures = "0.3"
-gpui = { workspace = true }
+gpui = { workspace = true, features = ["default"] }
 gpui-component = { workspace = true }
 gpui_platform = { git = "https://github.com/zed-industries/zed", features = [
   "font-kit"
@@ -21,8 +21,12 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [target.'cfg(target_os = "windows")'.dependencies]
+raw-window-handle = { version = "0.6", optional = true }
 windows = { version = ">=0.59, <=0.62", features = [
   "Win32_Foundation",
   "Win32_Graphics_Dwm"
-] }
-raw-window-handle = "0.6"
+], optional = true }
+
+[features]
+default = []
+mica = ["dep:raw-window-handle", "dep:windows"]

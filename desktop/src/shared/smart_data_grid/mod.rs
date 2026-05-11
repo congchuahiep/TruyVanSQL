@@ -349,7 +349,7 @@ impl SmartDataGrid {
             .gap_px()
             .border_b_1()
             .border_color(cx.theme().border)
-            .bg(cx.theme().background.alpha(1.))
+            .bg(cx.theme().background)
             .child(
                 Button::new("btn-refresh")
                     .ghost()

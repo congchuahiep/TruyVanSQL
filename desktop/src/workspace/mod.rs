@@ -143,6 +143,7 @@ impl Render for Workspace {
 
         self.register_actions(v_flex(), cx)
             .size_full()
+            .bg(cx.theme().secondary)
             .id("workspace")
             .child(self.title_bar.clone())
             .child(
@@ -157,10 +158,13 @@ impl Render for Workspace {
                             .size_full()
                             .min_w_0()
                             .min_h_0()
-                            .border_t_1()
-                            .border_l_1()
+                            .border_t(px(1.25))
+                            .border_l(px(1.25))
                             .border_color(cx.theme().border)
-                            .bg(cx.theme().background.alpha(0.4))
+                            .rounded_tl_lg()
+                            .shadow_xs()
+                            .overflow_hidden()
+                            .bg(cx.theme().background)
                             .child(self.tab_bar.clone())
                             .child(div().flex_1().flex_grow().min_w_0().min_h_0().child(
                                 if let Some(tab) = active_tab {

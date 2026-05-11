@@ -24,7 +24,7 @@ impl Render for TabBar {
         let active_index = manager.active_index();
         let tabs = manager.tabs();
 
-        let mut tab_bar = GpuiTabBar::new("app-tabs").w_full().border_0();
+        let mut tab_bar = GpuiTabBar::new("app-tabs").h_8().w_full().border_0();
 
         if let Some(index) = active_index {
             tab_bar = tab_bar.selected_index(index);
