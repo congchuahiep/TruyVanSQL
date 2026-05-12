@@ -48,7 +48,8 @@
 				"base.blue": "#0060de",
 				"base.green": "#319a00",
 				"base.magenta": "#9A0068",
-				"base.cyan": "#007E8A"
+				"base.cyan": "#007E8A",
+				"base.red.light": "#FFE2E2"
 			},
 			"highlight": {
 				"editor.foreground": "#000000",

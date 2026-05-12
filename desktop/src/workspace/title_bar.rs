@@ -4,7 +4,7 @@ use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::menu::DropdownMenu;
 use gpui_component::menu::PopupMenu;
-use gpui_component::{ActiveTheme, Icon, InteractiveElementExt, Sizable, ThemeRegistry, h_flex};
+use gpui_component::{ActiveTheme, InteractiveElementExt, ThemeRegistry, h_flex};
 
 use crate::action::app::Quit;
 use crate::action::connection::ConnectDatabase;
@@ -138,12 +138,12 @@ impl Render for Titlebar {
                     .flex()
                     .items_center()
                     .gap_1()
-                    .pl_1()
+                    .pl_0p5()
                     .child(
                         Button::new("hamburger-menu")
                             .ghost()
                             .cursor_pointer()
-                            .icon(Icon::new(AppIcon::Menu).large())
+                            .icon(AppIcon::Menu)
                             .dropdown_menu(move |menu: PopupMenu, window, cx| {
                                 menu.menu("New Database", Box::new(NewDatabase))
                                     .menu("Open File...", Box::new(OpenFile))

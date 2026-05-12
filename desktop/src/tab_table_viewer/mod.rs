@@ -1,3 +1,4 @@
+use assets::AppIcon;
 use engine::QueryResult;
 use gpui::*;
 use gpui_component::v_flex;
@@ -5,7 +6,7 @@ use std::any::Any;
 
 use crate::connection::model::DatabaseConnection;
 use crate::shared::smart_data_grid::SmartDataGrid;
-use crate::workspace::tab_item::TabItem;
+use crate::workspace::tab_item::{TabInfo, TabItem};
 
 /// Tab chuyên dụng để hiển thị toàn màn hình DataGrid (Table Viewer)
 pub struct TableViewerTab {
@@ -77,8 +78,19 @@ impl TableViewerTab {
 }
 
 impl TabItem for TableViewerTab {
-    fn tab_title(&self, _cx: &App) -> SharedString {
-        self.table_name.clone().into()
+    fn tab_info(&self, cx: &App) -> TabInfo {
+        TabInfo {
+            title: self.table_name.clone().into(),
+            is_dirty: self
+                .grid
+                .read(cx)
+                .table
+                .read(cx)
+                .delegate()
+                .state
+                .has_pending_changes(),
+            icon: AppIcon::Table,
+        }
     }
 
     fn as_any(&self) -> &dyn Any {

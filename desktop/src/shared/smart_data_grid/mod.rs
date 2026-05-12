@@ -6,10 +6,10 @@ use std::usize;
 
 use assets::AppIcon;
 use gpui::*;
-use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::button::{Button, ButtonCustomVariant, ButtonVariants};
 use gpui_component::input::InputState;
 use gpui_component::table::{DataTable, TableDelegate, TableEvent, TableState};
-use gpui_component::{ActiveTheme, Disableable, h_flex, v_flex};
+use gpui_component::{ActiveTheme, Disableable, Icon, h_flex, v_flex};
 use thiserror::Error;
 
 use crate::action::datagrid::{CancelEdit, CommitChanges, ConfirmEdit, CopyCell, StartEdit};
@@ -343,6 +343,16 @@ impl SmartDataGrid {
         let has_changes = state.has_pending_changes();
         let is_loading = state.is_loading;
 
+        let commit_changes_button = ButtonCustomVariant::new(cx)
+            .color(cx.theme().green)
+            .hover(cx.theme().green_light)
+            .active(cx.theme().green_light);
+
+        let discard_change_button = ButtonCustomVariant::new(cx)
+            .color(cx.theme().red)
+            .hover(cx.theme().red_light)
+            .active(cx.theme().red_light);
+
         h_flex()
             .w_full()
             .p_1()
@@ -379,10 +389,12 @@ impl SmartDataGrid {
             .child(div().w_px().h_4().mx_px().bg(cx.theme().border))
             .child(
                 Button::new("btn-submit-changes")
-                    .ghost()
+                    .outline()
+                    .border_0()
+                    .custom(commit_changes_button)
                     .size_6()
                     .cursor_pointer()
-                    .icon(AppIcon::Check)
+                    .icon(Icon::new(AppIcon::Check))
                     .on_click(|_, window, cx| {
                         window.dispatch_action(Box::new(CommitChanges), cx);
                     })
@@ -390,10 +402,12 @@ impl SmartDataGrid {
             )
             .child(
                 Button::new("btn-cancel")
-                    .ghost()
+                    .outline()
+                    .border_0()
+                    .custom(discard_change_button)
                     .size_6()
                     .cursor_pointer()
-                    .icon(AppIcon::X)
+                    .icon(Icon::new(AppIcon::X))
                     .disabled(!has_changes || is_loading),
             )
             .child(div().flex_1())

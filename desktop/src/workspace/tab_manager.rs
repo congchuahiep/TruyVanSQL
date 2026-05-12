@@ -1,5 +1,5 @@
+use crate::workspace::tab_item::{TabInfo, TabItem};
 use gpui::*;
-use crate::workspace::tab_item::TabItem;
 use std::sync::Arc;
 
 /// Wrapper che giấu kiểu dữ liệu thật của Tab.
@@ -7,19 +7,19 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct AnyTab {
     view: AnyView,
-    get_title: Arc<dyn Fn(&App) -> SharedString + Send + Sync>,
+    info_fn: Arc<dyn Fn(&App) -> TabInfo>,
 }
 
 impl AnyTab {
     pub fn new<T: TabItem>(view: Entity<T>) -> Self {
         Self {
             view: view.clone().into(),
-            get_title: Arc::new(move |cx| view.read(cx).tab_title(cx)),
+            info_fn: Arc::new(move |cx| view.read(cx).tab_info(cx)),
         }
     }
 
-    pub fn title(&self, cx: &App) -> SharedString {
-        (self.get_title)(cx)
+    pub fn info(&self, cx: &App) -> TabInfo {
+        (self.info_fn)(cx)
     }
 
     pub fn view(&self) -> AnyView {
