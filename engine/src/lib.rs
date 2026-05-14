@@ -1,11 +1,11 @@
-pub mod config;
+mod database_config;
 pub mod driver;
-pub mod error;
-pub mod result;
-pub mod schema;
-pub mod sql_client;
+mod error;
+mod result;
+mod schema;
+mod sql_client;
 
-pub use config::{DatabaseConfig, DatabaseKind};
+pub use database_config::*;
 pub use driver::DatabaseDriver;
 pub use error::EngineError;
 pub use result::{Column, QueryResult, Row, Value};

@@ -1,13 +1,13 @@
 use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
 use sqlx::{Column as SqlxColumn, Row, TypeInfo};
 
-use crate::config::DatabaseConfig;
 use crate::driver::{DatabaseDriver, SqlDialect};
 use crate::error::EngineError;
 use crate::result::{Column, QueryResult, Row as ResultRow, Value};
 use crate::schema::{
     ColumnInfo, ForeignKeyInfo, IndexInfo, PrimaryKey, TableBrief, TableInfo, TableKind,
 };
+use crate::{DatabaseConfig, FileDbConfig};
 
 /// SQLite driver implementation.
 ///
@@ -25,6 +25,18 @@ impl SqliteDriver {
     /// - File database: `"sqlite:./data.db"`
     /// - In-memory database: `"sqlite::memory:"`
     pub async fn new(config: &DatabaseConfig) -> Result<Self, EngineError> {
+        let sqlite_config = match config {
+            DatabaseConfig::Sqlite(c) => c,
+            _ => {
+                return Err(EngineError::Connection(
+                    "Invalid config type for SqliteDriver".into(),
+                ));
+            }
+        };
+        Self::from_config(sqlite_config).await
+    }
+
+    async fn from_config(config: &FileDbConfig) -> Result<Self, EngineError> {
         let pool = SqlitePoolOptions::new()
             .max_connections(config.max_connections)
             .connect(&config.url)
@@ -247,6 +259,7 @@ impl SqlDialect for SqliteDriver {
         }
     }
 }
+
 #[async_trait::async_trait]
 impl DatabaseDriver for SqliteDriver {
     async fn execute(&self, query: &str) -> Result<QueryResult, EngineError> {
@@ -403,13 +416,20 @@ fn convert_value(row: &sqlx::sqlite::SqliteRow, idx: usize) -> Option<Value> {
 mod tests {
     use super::*;
     use crate::{
-        DataChangeset,
+        DataChangeset, FileDbConfig,
         schema::{ColumnData, RowDelete, RowUpdate},
     };
 
     async fn create_driver() -> SqliteDriver {
         let config = DatabaseConfig::sqlite("sqlite::memory:");
         SqliteDriver::new(&config).await.unwrap()
+    }
+
+    fn sqlite_config() -> FileDbConfig {
+        FileDbConfig {
+            url: "sqlite::memory:".to_string(),
+            max_connections: 5,
+        }
     }
 
     // ===== is_dql tests =====
@@ -850,12 +870,16 @@ mod tests {
 
     #[test]
     fn test_generate_changeset_script() {
-        let config = DatabaseConfig::sqlite("sqlite::memory:");
+        let config = FileDbConfig {
+            url: "sqlite::memory:".to_string(),
+            max_connections: 5,
+        };
         // Cần tokio runtime để tạo driver, nhưng generate_changeset_script không async
         // Tuy nhiên SqliteDriver::new là async.
         // Ta có thể mock hoặc sử dụng block_on nếu cần, nhưng ở đây ta có thể tạo driver đơn giản.
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let driver = rt.block_on(async { SqliteDriver::new(&config).await.unwrap() });
+        let db_config = DatabaseConfig::Sqlite(config);
+        let driver = rt.block_on(async { SqliteDriver::new(&db_config).await.unwrap() });
 
         let changeset = DataChangeset {
             table_name: "users".to_string(),

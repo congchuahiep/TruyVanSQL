@@ -1,7 +1,7 @@
 use std::ops::Deref;
 use std::sync::Arc;
 
-use crate::config::DatabaseConfig;
+use crate::database_config::DatabaseConfig;
 use crate::driver::{self, DatabaseDriver};
 use crate::error::EngineError;
 
@@ -61,6 +61,15 @@ impl SqlClient {
         Ok(Self {
             driver: Arc::from(driver),
         })
+    }
+
+    /// Test kết nối database mà không giữ lại client.
+    ///
+    /// Tương tự `connect()`, nhưng sau khi ping thành công, client sẽ bị drop.
+    /// Hữu ích khi muốn xác nhận config hợp lệ trước khi tạo kết nối thực sự.
+    pub async fn test_connection(config: DatabaseConfig) -> Result<(), EngineError> {
+        let client = Self::connect(config).await?;
+        client.ping().await
     }
 
     /// This funtion do absolutely nothing
