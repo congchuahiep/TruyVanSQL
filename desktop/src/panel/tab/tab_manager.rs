@@ -1,4 +1,4 @@
-use crate::workspace::tab_item::{TabInfo, TabItem};
+use crate::panel::tab::tab_item::{TabInfo, TabItem};
 use gpui::*;
 use std::sync::Arc;
 

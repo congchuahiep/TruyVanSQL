@@ -10,7 +10,7 @@ futures = "0.3"
 gpui = { workspace = true, features = ["default"] }
 gpui-component = { workspace = true }
 gpui_platform = { git = "https://github.com/zed-industries/zed", features = [
-  "font-kit"
+    "font-kit",
 ] }
 rfd = "0.15"
 serde = { version = "1", features = ["derive"] }
@@ -23,8 +23,8 @@ tracing-subscriber.workspace = true
 [target.'cfg(target_os = "windows")'.dependencies]
 raw-window-handle = { version = "0.6", optional = true }
 windows = { version = ">=0.59, <=0.62", features = [
-  "Win32_Foundation",
-  "Win32_Graphics_Dwm"
+    "Win32_Foundation",
+    "Win32_Graphics_Dwm",
 ], optional = true }
 
 [features]

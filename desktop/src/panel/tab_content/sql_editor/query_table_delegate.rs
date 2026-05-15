@@ -15,7 +15,6 @@ impl QueryTableDelegate {
             .map(|col| GpuiColumn::new(&col.name, col.name.clone()).width(150.0))
             .collect();
 
-        // Sử dụng SharedString để tối ưu bộ nhớ và CPU khi scroll 60fps
         let rows: Vec<Vec<SharedString>> = engine_rows
             .iter()
             .map(|row| {
@@ -60,7 +59,6 @@ impl TableDelegate for QueryTableDelegate {
         _window: &mut Window,
         _cx: &mut Context<TableState<Self>>,
     ) -> impl IntoElement {
-        // Tối ưu hiệu năng: Không bọc bằng div(). Trả thẳng văn bản dạng AnyElement.
         self.rows[row_ix][col_ix].clone().into_any_element()
     }
 

@@ -1,12 +1,11 @@
+use crate::panel::tab_content::sql_editor::query_table_delegate::QueryTableDelegate;
+use crate::panel::tab_content::sql_editor::query_session::QuerySession;
+use crate::panel::tab_content::sql_editor::output_content::OutputContent;
 use gpui::*;
 use gpui_component::label::Label;
 use gpui_component::scroll::ScrollableElement;
 use gpui_component::table::{DataTable, TableState};
 use gpui_component::{ActiveTheme, h_flex, v_flex};
-
-use crate::tab_sql_editor::session::QuerySession;
-use crate::tab_sql_editor::state::OutputContent;
-use crate::tab_sql_editor::table_delegate::QueryTableDelegate;
 
 /// View hiển thị kết quả của phiên truy vấn (Query Results).
 /// Sẽ được thiết kế để chỉ xuất hiện khi có dữ liệu (không phải Empty).
@@ -24,7 +23,6 @@ impl QueryResults {
                 .row_selectable(true)
         });
 
-        // Quan sát session để render lại khi output thay đổi
         cx.observe(&session, |this, _, cx| {
             let output = this.session.read(cx).output.clone();
             match &output {
@@ -56,15 +54,12 @@ impl Render for QueryResults {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let output = self.session.read(cx).output.clone();
 
-        // 1. Nếu chưa có kết quả gì, không render component này
         if matches!(output, OutputContent::Empty) {
-            return div().into_any_element(); // Trả về một div trống (chiếm 0 không gian)
+            return div().into_any_element();
         }
 
-        // 2. Xử lý hiển thị dựa trên nội dung output
         let content = match output {
-            OutputContent::Empty => unreachable!(), // Đã xử lý ở trên
-
+            OutputContent::Empty => unreachable!(),
             OutputContent::Execution { text } => div()
                 .id("results-execution")
                 .w_full()
@@ -73,7 +68,6 @@ impl Render for QueryResults {
                 .overflow_y_scrollbar()
                 .child(Label::new(text).text_sm())
                 .into_any_element(),
-
             OutputContent::Query { .. } => div()
                 .flex_1()
                 .w_full()
@@ -86,27 +80,25 @@ impl Render for QueryResults {
                         .scrollbar_visible(true, true),
                 )
                 .into_any_element(),
-
             OutputContent::Error(msg) => div()
                 .id("results-error")
                 .w_full()
                 .flex_1()
                 .p_3()
-                .bg(gpui::rgba(0xff000033)) // Highlight nền đỏ nhạt cho lỗi
+                .bg(gpui::rgba(0xff000033))
                 .overflow_y_scrollbar()
                 .child(
                     Label::new(format!("Lỗi: {}", msg))
                         .text_sm()
-                        .text_color(gpui::rgba(0xff0000ff)), // Chữ màu đỏ
+                        .text_color(gpui::rgba(0xff0000ff)),
                 )
                 .into_any_element(),
         };
 
-        // 3. Khung chứa chính (Wrapper) với Header nhỏ
         v_flex()
             .id("query-results-panel")
             .w_full()
-            .h(px(250.0)) // Chiều cao cố định (Tương lai có thể làm resizable panel)
+            .h(px(250.0))
             .border_t_1()
             .border_color(cx.theme().border)
             .bg(cx.theme().background)
@@ -117,7 +109,7 @@ impl Render for QueryResults {
                     .py_1()
                     .border_b_1()
                     .border_color(cx.theme().border)
-                    .bg(cx.theme().muted) // Nền hơi tối cho header
+                    .bg(cx.theme().muted)
                     .child(
                         Label::new("Results")
                             .text_xs()

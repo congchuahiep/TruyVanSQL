@@ -8,7 +8,7 @@ use gpui_component::h_flex;
 use crate::component::tab::Tab;
 use assets::AppIcon;
 
-use crate::workspace::tab_manager::TabManager;
+use crate::panel::tab::TabManager;
 
 pub struct TabBar {
     tab_manager: Entity<TabManager>,

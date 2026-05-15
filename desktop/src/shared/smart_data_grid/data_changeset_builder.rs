@@ -1,4 +1,4 @@
-use crate::shared::smart_data_grid::state::GridState;
+use crate::shared::smart_data_grid::grid_state::GridState;
 use engine::{ColumnData, DataChangeset, RowDelete, RowUpdate};
 use std::collections::HashMap;
 use thiserror::Error;

@@ -1,22 +1,15 @@
-pub mod editor;
-pub mod results;
-pub mod session;
-pub mod state;
-pub mod table_delegate;
-pub mod toolbar;
-
 use assets::AppIcon;
 use gpui::*;
 use gpui_component::v_flex;
 use std::any::Any;
 
-use crate::connection::model::DatabaseConnection;
-use crate::workspace::tab_item::{TabInfo, TabItem};
+use crate::connection::DatabaseConnection;
+use crate::panel::{TabInfo, TabItem};
 
-use editor::QueryEditor;
-use results::QueryResults;
-use session::QuerySession;
-use toolbar::QueryToolbar;
+use super::query_editor::QueryEditor;
+use super::query_results::QueryResults;
+use super::query_session::QuerySession;
+use super::query_toolbar::QueryToolbar;
 
 /// View chính của tính năng SQL Editor Tab.
 /// Nó gom nhóm Logic (Session) và các UI Component (Editor, Toolbar, Results).

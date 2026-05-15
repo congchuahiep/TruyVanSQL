@@ -1,13 +1,9 @@
-use crate::connection::model::DatabaseConnection;
+use crate::connection::database_connection::DatabaseConnection;
 use engine::{DatabaseConfig, SqlClient};
 use gpui::*;
 
-/// Dịch vụ quản lý các Database Connection
 pub struct ConnectionStore {
-    /// Danh sách các kết nối cơ sở dữ liệu
     connections: Vec<Entity<DatabaseConnection>>,
-
-    /// Chỉ số của kết nối đang hoạt động
     active_index: Option<usize>,
 }
 
@@ -19,10 +15,14 @@ impl ConnectionStore {
         }
     }
 
-    pub fn add_connection(&mut self, name: String, config: DatabaseConfig, cx: &mut Context<Self>) {
+    pub fn add_connection(
+        &mut self,
+        name: SharedString,
+        config: DatabaseConfig,
+        cx: &mut Context<Self>,
+    ) {
         let connection = cx.new(|cx| DatabaseConnection::new(name, config, cx));
 
-        // Tự động kết nối
         connection.update(cx, |c, cx| c.connect(cx));
 
         cx.observe(&connection, |_, _, cx| cx.notify()).detach();

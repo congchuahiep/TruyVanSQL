@@ -1,5 +1,6 @@
-use crate::shared::smart_data_grid::state::EditingState;
-use crate::shared::smart_data_grid::state::GridState;
+use crate::shared::smart_data_grid::EditingState;
+
+use super::grid_state::GridState;
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::input::Input;
@@ -15,7 +16,6 @@ pub struct GridDelegate {
 
 impl GridDelegate {
     pub fn new(state: GridState, cell_editor: Entity<InputState>) -> Self {
-        // Tối ưu: Tính toán và cache lại danh sách GpuiColumn một lần duy nhất.
         let cached_columns = state
             .columns
             .iter()
@@ -46,7 +46,7 @@ impl TableDelegate for GridDelegate {
     }
 
     fn column(&self, col_ix: usize, _: &App) -> GpuiColumn {
-        self.cached_columns[col_ix].clone() // Rất nhanh vì chỉ clone Arc bên trong GpuiColumn
+        self.cached_columns[col_ix].clone()
     }
 
     fn render_td(
@@ -56,7 +56,6 @@ impl TableDelegate for GridDelegate {
         _window: &mut Window,
         _cx: &mut Context<TableState<Self>>,
     ) -> impl IntoElement {
-        // NẾU Ô NÀY ĐANG ĐƯỢC EDIT -> Render Input thay vì Text
         if let Some(EditingState {
             row,
             col,
@@ -87,7 +86,6 @@ impl TableDelegate for GridDelegate {
         let is_edited = self.state.pending_edits.contains_key(&(row_ix, col_ix));
         let is_deleted = self.state.pending_deletes.contains(&row_ix);
 
-        // Lấy dữ liệu dạng SharedString (Zero-cost clone)
         let text: SharedString =
             if let Some(new_val) = self.state.pending_edits.get(&(row_ix, col_ix)) {
                 new_val.clone().into()

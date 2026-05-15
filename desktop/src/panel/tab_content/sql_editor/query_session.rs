@@ -1,9 +1,8 @@
+use crate::connection::DatabaseConnection;
+use crate::panel::tab_content::sql_editor::output_content::OutputContent;
 use engine::QueryResult;
 use gpui::*;
 use gpui_component::input::InputState;
-
-use crate::connection::model::{ConnectionStatus, DatabaseConnection};
-use crate::tab_sql_editor::state::OutputContent;
 
 /// Quản lý trạng thái và logic của một phiên chạy SQL.
 pub struct QuerySession {
@@ -44,7 +43,7 @@ impl QuerySession {
         }
 
         let conn = self.connection.read(cx);
-        if conn.status != ConnectionStatus::Online {
+        if conn.status != crate::connection::ConnectionStatus::Online {
             self.output = OutputContent::Error("Database chưa kết nối.".into());
             cx.notify();
             return;

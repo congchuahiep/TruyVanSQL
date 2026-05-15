@@ -4,9 +4,9 @@ use gpui::*;
 use gpui_component::v_flex;
 use std::any::Any;
 
-use crate::connection::model::DatabaseConnection;
+use crate::connection::DatabaseConnection;
+use crate::panel::{TabInfo, TabItem};
 use crate::shared::smart_data_grid::SmartDataGrid;
-use crate::workspace::tab_item::{TabInfo, TabItem};
 
 /// Tab chuyên dụng để hiển thị toàn màn hình DataGrid (Table Viewer)
 pub struct TableViewerTab {
@@ -35,7 +35,6 @@ impl TableViewerTab {
         tab
     }
 
-    /// Load dữ liệu từ database và nạp vào Grid
     fn load_data(
         &self,
         table_name: String,
@@ -53,20 +52,16 @@ impl TableViewerTab {
         let query = format!("SELECT * FROM \"{}\" LIMIT 1000", table_name);
 
         cx.spawn(async move |_, cx| {
-            // Lấy thông tin table để tìm Primary Key (hỗ trợ Edit)
             let mut pks = Vec::new();
             if let Ok(info) = client.get_table_info(&table_name).await {
                 pks = info.primary_key.columns;
             }
 
-            // Thực thi truy vấn lấy 1000 dòng
             let result = client.execute(&query).await;
 
-            // Nạp dữ liệu vào SmartDataGrid
             grid_entity.update(cx, |grid, cx| {
                 if let Ok(QueryResult::Query { columns, rows }) = result {
                     grid.set_data(columns, rows, cx);
-                    // Truyền metadata để Grid tự nhận diện nó có quyền Edit hay không
                     grid.set_metadata(Some(table_name.clone()), pks, cx);
                 } else if let Err(e) = result {
                     eprintln!("TableViewerTab Lỗi: {}", e);

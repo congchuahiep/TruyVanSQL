@@ -1,4 +1,4 @@
-use crate::tab_sql_editor::session::QuerySession;
+use crate::panel::tab_content::sql_editor::query_session::QuerySession;
 use assets::AppIcon;
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};

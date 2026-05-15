@@ -1,14 +1,18 @@
 use assets::AppIcon;
+use engine::DatabaseKind;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_component::ActiveTheme;
+use gpui_component::Icon;
 use gpui_component::sidebar::Sidebar;
+use gpui_component::spinner::Spinner;
 
 use crate::action::sidebar::RefreshDatabase;
 use crate::component::sidebar_menu_item::SidebarMenuItem;
-use crate::connection::model::ConnectionStatus;
-use crate::connection::store::ConnectionStore;
-use crate::tab_table_viewer::TableViewerTab;
-use crate::workspace::tab_manager::TabManager;
+use crate::connection::ConnectionStatus;
+use crate::connection::ConnectionStore;
+use crate::panel::TabManager;
+use crate::panel::TableViewerTab;
 
 pub struct Explorer {
     connection_store: Entity<ConnectionStore>,
@@ -58,18 +62,24 @@ impl Render for Explorer {
                     .enumerate()
                     .map(|(_i, conn_entity)| {
                         let conn = conn_entity.read(cx);
-                        let conn_name = conn.name.clone();
+
                         let tables = conn.tables.clone();
                         let is_loading = conn.status == ConnectionStatus::Connecting;
+                        let is_online = conn.status == ConnectionStatus::Online;
+                        let is_offline = matches!(conn.status, ConnectionStatus::Error(_));
+
+                        let db_icon = match conn.config.kind() {
+                            DatabaseKind::Sqlite => AppIcon::Database,
+                            DatabaseKind::Postgres => AppIcon::Postgres,
+                        };
 
                         let cloned_conn_1 = conn_entity.clone();
                         let cloned_conn_2 = conn_entity.clone();
                         let tab_manager_for_map = self.tab_manager.clone();
 
-                        SidebarMenuItem::new(conn_name.clone())
-                            .icon(AppIcon::Database)
+                        SidebarMenuItem::new(&conn.name)
+                            .icon(db_icon)
                             .expand_on_double_click(true)
-                            .loading(is_loading)
                             .on_click(cx.listener(move |_, _, _, cx| {
                                 cloned_conn_1.update(cx, |c, cx| {
                                     if c.tables.is_empty() && c.status == ConnectionStatus::Online {
@@ -77,6 +87,16 @@ impl Render for Explorer {
                                     }
                                 });
                             }))
+                            .suffix(move |_, cx| {
+                                div()
+                                    .when(is_loading, |this| this.child(Spinner::new()).size_4())
+                                    .when(is_online, |this| {
+                                        this.size_1p5().rounded_full().bg(cx.theme().green).mr_1()
+                                    })
+                                    .when(is_offline, |this| {
+                                        this.size_1p5().rounded_full().bg(cx.theme().red).mr_1()
+                                    })
+                            })
                             .context_menu(|popup, _, _| {
                                 popup.menu("Refresh database", Box::new(RefreshDatabase))
                             })
