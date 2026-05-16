@@ -155,64 +155,6 @@ impl Titlebar {
             )
     }
 
-    /// Spacer bên trái để cân bằng với dialog controls bên phải,
-    /// giúp tiêu đề luôn được căn giữa toàn bộ titlebar.
-    // fn render_dialog_left_spacer(&self) -> impl IntoElement {
-    //     if cfg!(target_os = "macos") || cfg!(target_family = "wasm") {
-    //         return h_flex().id("dialog-left-spacer");
-    //     }
-
-    //     // Width của spacer = width của 1 nút close (size_10 = 40px)
-    //     h_flex()
-    //         .id("dialog-left-spacer")
-    //         .window_control_area(WindowControlArea::Drag)
-    //         .w(px(40.))
-    //         .h_full()
-    //         .flex_shrink_0()
-    // }
-
-    // fn render_dialog_drag_area(&self) -> impl IntoElement {
-    //     let title = match &self.kind {
-    //         TitlebarKind::Dialog { title } => title.clone(),
-    //         _ => SharedString::default(),
-    //     };
-
-    //     h_flex()
-    //         .id("dialog-drag")
-    //         .window_control_area(WindowControlArea::Drag)
-    //         .flex_1()
-    //         .h_full()
-    //         .items_center()
-    //         .justify_center()
-    //         .pl_4()
-    //         .bg(gpui::rgb(0xFF6467))
-    //         .child(div().id("dialog-title").text_xs().child(title.clone()))
-    // }
-
-    // fn render_dialog_controls(&self) -> impl IntoElement {
-    //     if cfg!(target_os = "macos") || cfg!(target_family = "wasm") {
-    //         return h_flex().id("dialog-controls");
-    //     }
-
-    //     h_flex()
-    //         .id("dialog-controls")
-    //         .justify_end()
-    //         .flex_shrink_0()
-    //         .child(
-    //             Button::new("btn-dialog-close")
-    //                 .ghost()
-    //                 .size_10()
-    //                 .rounded_none()
-    //                 .cursor_pointer()
-    //                 .icon(AppIcon::WindowClose)
-    //                 .window_control_area(WindowControlArea::Close)
-    //                 .on_click(|_, window, _| {
-    //                     window.remove_window();
-    //                 }),
-    //         )
-    // }
-    //
-
     /// Drag area: chỉ để bắt drag, KHÔNG chứa tiêu đề.
     /// Chiếm flex_1 giữa các controls, không full-width.
     fn render_dialog_drag_area(&self) -> impl IntoElement {
@@ -221,11 +163,9 @@ impl Titlebar {
             .window_control_area(WindowControlArea::Drag)
             .flex_1()
             .h_full()
-        // ❌ KHÔNG có justify_center
-        // ❌ KHÔNG có child tiêu đề
     }
+
     /// Tiêu đề: absolute, nằm giữa TOÀN BỘ titlebar.
-    /// Không occlude → mouse event xuyên qua → drag area bên dưới bắt được.
     fn render_dialog_title(&self) -> impl IntoElement {
         let title = match &self.kind {
             TitlebarKind::Dialog { title } => title.clone(),
@@ -239,10 +179,9 @@ impl Titlebar {
             .h_full()
             .items_center()
             .justify_center()
-            // ⚠️ QUAN TRỌNG: KHÔNG gọi .occlude()
-            // Để mouse event pass-through đến drag area bên dưới
             .child(div().text_xs().font_semibold().child(title.clone()))
     }
+
     /// Controls: flex item bình thường, không absolute.
     fn render_dialog_controls(&self) -> impl IntoElement {
         if cfg!(target_os = "macos") || cfg!(target_family = "wasm") {
@@ -304,12 +243,9 @@ impl Render for Titlebar {
                 .into_any_element(),
             TitlebarKind::Dialog { .. } => el
                 .relative()
-                // .child(self.render_dialog_left_spacer())
-                // .child(self.render_dialog_drag_area())
-                // .child(self.render_dialog_controls())
-                .child(self.render_dialog_drag_area()) // (1) flex_1, chỉ drag
-                .child(self.render_dialog_controls()) // (2) flex_shrink_0, nút close
-                .child(self.render_dialog_title()) // (3) absolute, centered, pass-through
+                .child(self.render_dialog_drag_area())
+                .child(self.render_dialog_controls())
+                .child(self.render_dialog_title())
                 .into_any_element(),
         }
     }

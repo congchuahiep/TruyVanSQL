@@ -1,13 +1,14 @@
+use std::collections::HashMap;
+
 use engine::ConnectionCategory;
 use engine::{DatabaseConfig, DatabaseKind, SqlClient};
 use gpui::prelude::*;
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::form::{field, h_form};
-use gpui_component::input::{Input, InputState};
+use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::scroll::ScrollableElement;
 use gpui_component::select::{Select, SelectEvent, SelectState};
-use gpui_component::separator::Separator;
 use gpui_component::{ActiveTheme, Disableable, IndexPath, Sizable, h_flex, v_flex};
 
 use crate::connection::ConnectionStore;
@@ -33,6 +34,8 @@ pub struct ConnectionWindow {
     database_input: Entity<InputState>,
 
     selected_path: Option<String>,
+
+    form_errors: HashMap<&'static str, SharedString>,
 
     connection_store: Entity<ConnectionStore>,
 }
@@ -87,8 +90,98 @@ impl ConnectionWindow {
                 .default_value("postgres")
         });
 
+        let mut this = Self {
+            is_testing: false,
+            scroll_handle: ScrollHandle::new(),
+            title_bar,
+            selected_kind,
+            kind_select,
+            name_input,
+            host_input,
+            port_input,
+            user_input,
+            password_input,
+            database_input,
+            selected_path: None,
+            form_errors: HashMap::new(),
+            connection_store,
+        };
+
+        this.register_subscriptions(window, cx);
+
+        this
+    }
+
+    fn register_subscriptions(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         cx.subscribe_in(
-            &kind_select,
+            &self.name_input,
+            window,
+            |this, _, event: &InputEvent, _, cx| {
+                if matches!(event, InputEvent::Change) {
+                    this.form_errors.remove("name");
+                    cx.notify();
+                }
+            },
+        )
+        .detach();
+
+        cx.subscribe_in(
+            &self.host_input,
+            window,
+            |this, _, event: &InputEvent, _, cx| {
+                if matches!(event, InputEvent::Change) {
+                    this.form_errors.remove("host");
+                    cx.notify();
+                }
+            },
+        )
+        .detach();
+
+        // Port: real-time validation — chỉ cho phép số
+        cx.subscribe_in(
+            &self.port_input,
+            window,
+            |this, _, event: &InputEvent, _, cx| {
+                if matches!(event, InputEvent::Change) {
+                    let val = this.port_input.read(cx).value();
+                    if !val.is_empty() && val.chars().any(|c| !c.is_ascii_digit()) {
+                        this.form_errors
+                            .insert("port", "Port chỉ được nhập số".into());
+                    } else {
+                        this.form_errors.remove("port");
+                    }
+                    cx.notify();
+                }
+            },
+        )
+        .detach();
+
+        cx.subscribe_in(
+            &self.user_input,
+            window,
+            |this, _, event: &InputEvent, _, cx| {
+                if matches!(event, InputEvent::Change) {
+                    this.form_errors.remove("user");
+                    cx.notify();
+                }
+            },
+        )
+        .detach();
+
+        cx.subscribe_in(
+            &self.database_input,
+            window,
+            |this, _, event: &InputEvent, _, cx| {
+                if matches!(event, InputEvent::Change) {
+                    this.form_errors.remove("database");
+                    cx.notify();
+                }
+            },
+        )
+        .detach();
+
+        cx.subscribe_in(
+            &self.kind_select,
             window,
             |this, _select, event: &SelectEvent<Vec<SharedString>>, window, cx| {
                 if let SelectEvent::Confirm(Some(value)) = event {
@@ -102,25 +195,67 @@ impl ConnectionWindow {
             },
         )
         .detach();
-
-        Self {
-            is_testing: false,
-            scroll_handle: ScrollHandle::new(),
-            title_bar,
-            selected_kind,
-            kind_select,
-            name_input,
-            host_input,
-            port_input,
-            user_input,
-            password_input,
-            database_input,
-            selected_path: None,
-            connection_store,
-        }
     }
 
+    /// Validate tất cả required fields. Trả về `true` nếu form hợp lệ.
+    fn validate_form(&mut self, cx: &mut Context<Self>) -> bool {
+        self.form_errors.clear();
+
+        let name = self.name_input.read(cx).value().to_string();
+        if name.trim().is_empty() {
+            self.form_errors
+                .insert("name", "Tên kết nối không được để trống".into());
+        }
+
+        match self.selected_kind.category() {
+            ConnectionCategory::NetworkBased => {
+                let host = self.host_input.read(cx).value().to_string();
+                if host.trim().is_empty() {
+                    self.form_errors
+                        .insert("host", "Host không được để trống".into());
+                }
+
+                let port_str = self.port_input.read(cx).value().to_string();
+                if port_str.trim().is_empty() {
+                    self.form_errors
+                        .insert("port", "Port không được để trống".into());
+                } else {
+                    match port_str.trim().parse::<u16>() {
+                        Ok(p) if p > 0 => {} // hợp lệ
+                        _ => {
+                            self.form_errors
+                                .insert("port", "Port phải là số từ 1 đến 65535".into());
+                        }
+                    }
+                }
+
+                let user = self.user_input.read(cx).value().to_string();
+                if user.trim().is_empty() {
+                    self.form_errors
+                        .insert("user", "User không được để trống".into());
+                }
+
+                let database = self.database_input.read(cx).value().to_string();
+                if database.trim().is_empty() {
+                    self.form_errors
+                        .insert("database", "Database không được để trống".into());
+                }
+            }
+            ConnectionCategory::FileBased => {
+                if self.selected_path.is_none() {
+                    self.form_errors
+                        .insert("file", "Vui lòng chọn file SQLite".into());
+                }
+            }
+        }
+
+        self.form_errors.is_empty()
+    }
+
+    /// Xử lý sự kiện thay đổi loại Database để kết nối.
     fn on_kind_changed(&mut self, kind: DatabaseKind, window: &mut Window, cx: &mut Context<Self>) {
+        self.form_errors.clear();
+
         let old_category = self.selected_kind.category();
         let new_category = kind.category();
 
@@ -147,6 +282,7 @@ impl ConnectionWindow {
         cx.notify();
     }
 
+    /// Xử lý sự kiện chọn file SQLite.
     fn on_browse_file(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
             let dialog = rfd::AsyncFileDialog::new()
@@ -202,6 +338,7 @@ impl ConnectionWindow {
         }
     }
 
+    /// Xử lý sự kiện test kết nối
     fn on_test(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         let config = self.get_connection_config(cx);
         self.is_testing = true;
@@ -222,12 +359,18 @@ impl ConnectionWindow {
         .detach();
     }
 
+    /// Xử lý sự kiện submit form. Nếu form không hợp lệ, không làm gì cả.
     fn on_submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.validate_form(cx) {
+            cx.notify();
+            return;
+        }
+
+        let name = self.name_input.read(cx).value().to_string();
         let config = self.get_connection_config(cx);
-        let name = self.name_input.read(cx).value();
 
         self.connection_store.update(cx, |store, cx| {
-            store.add_connection(name, config, cx);
+            store.add_connection(name.into(), config, cx);
         });
 
         window.remove_window();
@@ -239,27 +382,47 @@ impl ConnectionWindow {
 
     fn render_network_fields(&self) -> impl IntoElement {
         let kind = &self.selected_kind;
+
+        let host_error = self.form_errors.get("host").cloned();
+        let port_error = self.form_errors.get("port").cloned();
+        let user_error = self.form_errors.get("user").cloned();
+        let database_error = self.form_errors.get("database").cloned();
+
+        let host_desc: SharedString = "Địa chỉ máy chủ".into();
+        let port_desc: SharedString = format!("Mặc định: {}", kind.default_port()).into();
+        let user_desc: SharedString = "Tên người dùng kết nối".into();
+        let db_desc: SharedString = format!("Mặc định: {}", kind.default_database()).into();
+
+        // Mình không rõ là cái hàm này nó tối ưu không nữa khi nó sử dụng .to_string()
+        let description_fn = |err: &Option<SharedString>, default: &SharedString| -> Div {
+            if let Some(msg) = err {
+                div().text_color(red()).child(msg.clone())
+            } else {
+                div().child(default.clone())
+            }
+        };
+
         h_form()
             .label_width(px(100.))
             .child(
                 field()
                     .label("Host")
                     .required(true)
-                    .description("Địa chỉ máy chủ")
+                    .description_fn(move |_, _| description_fn(&host_error, &host_desc))
                     .child(Input::new(&self.host_input)),
             )
             .child(
                 field()
                     .label("Port")
                     .required(true)
-                    .description(format!("Mặc định: {}", kind.default_port()))
+                    .description_fn(move |_, _| description_fn(&port_error, &port_desc))
                     .child(Input::new(&self.port_input)),
             )
             .child(
                 field()
                     .label("User")
                     .required(true)
-                    .description("Tên người dùng kết nối")
+                    .description_fn(move |_, _| description_fn(&user_error, &user_desc))
                     .child(Input::new(&self.user_input)),
             )
             .child(
@@ -272,7 +435,7 @@ impl ConnectionWindow {
                 field()
                     .label("Database")
                     .required(true)
-                    .description(format!("Mặc định: {}", kind.default_database()))
+                    .description_fn(move |_, _| description_fn(&database_error, &db_desc))
                     .child(Input::new(&self.database_input)),
             )
     }
@@ -284,11 +447,19 @@ impl ConnectionWindow {
             .unwrap_or("Choose a file...")
             .into();
 
+        let file_error = self.form_errors.get("file").cloned();
+
         h_form().label_width(px(100.)).child(
             field()
                 .label("File")
                 .required(true)
-                .description("Đường dẫn tới file SQLite (.db, .sqlite, .sqlite3)".to_string())
+                .description_fn(move |_, _| {
+                    if let Some(msg) = &file_error {
+                        div().text_color(red()).child(msg.clone())
+                    } else {
+                        div().child("Đường dẫn tới file SQLite (.db, .sqlite, .sqlite3)")
+                    }
+                })
                 .child(
                     h_flex()
                         .gap_2()
@@ -356,12 +527,20 @@ impl Render for ConnectionWindow {
                                     .description("Chọn loại database cần kết nối")
                                     .child(Select::new(&self.kind_select)),
                             )
-                            .child(
+                            .child({
+                                let name_error = self.form_errors.get("name").cloned();
                                 field()
                                     .label("Tên kết nối")
                                     .required(true)
-                                    .child(Input::new(&self.name_input)),
-                            ),
+                                    .description_fn(move |_, _| {
+                                        if let Some(err) = &name_error {
+                                            div().text_color(red()).child(err.clone())
+                                        } else {
+                                            div()
+                                        }
+                                    })
+                                    .child(Input::new(&self.name_input))
+                            }),
                     ),
             )
             .child(
