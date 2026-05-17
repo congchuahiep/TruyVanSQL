@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{Column as SqlxColumn, Row, TypeInfo};
 
@@ -36,6 +38,7 @@ impl PostgresDriver {
     async fn from_config(config: &NetworkDbConfig) -> Result<Self, EngineError> {
         let url = config.connection_url();
         let pool = PgPoolOptions::new()
+            .acquire_timeout(Duration::from_secs(config.acquire_timeout_secs))
             .max_connections(config.max_connections as u32)
             .connect(&url)
             .await

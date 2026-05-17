@@ -21,6 +21,7 @@ impl DatabaseConfig {
         Self::Sqlite(FileDbConfig {
             url: url.into(),
             max_connections: 5,
+            ..Default::default()
         })
     }
 
@@ -48,6 +49,7 @@ impl DatabaseConfig {
                 database: database.to_string(),
             },
             max_connections: 5,
+            acquire_timeout_secs: 10,
         })
     }
 
@@ -72,6 +74,22 @@ impl DatabaseConfig {
         match self {
             Self::Sqlite(c) => c.url.clone(),
             Self::Network(c) => c.connection_url(),
+        }
+    }
+
+    /// Trả về thời gian chờ khi lấy connection (giây).
+    pub fn acquire_timeout_secs(&self) -> u64 {
+        match self {
+            Self::Sqlite(c) => c.acquire_timeout_secs,
+            Self::Network(c) => c.acquire_timeout_secs,
+        }
+    }
+
+    /// Đặt thời gian chờ khi lấy connection (giây).
+    pub fn set_acquire_timeout_secs(&mut self, secs: u64) {
+        match self {
+            Self::Sqlite(c) => c.acquire_timeout_secs = secs,
+            Self::Network(c) => c.acquire_timeout_secs = secs,
         }
     }
 }

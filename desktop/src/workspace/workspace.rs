@@ -106,7 +106,7 @@ impl Workspace {
     ) {
         let connection_store = self.connection_store.clone();
         let window_bounds =
-            WindowBounds::Windowed(Bounds::centered(None, size(px(480.0), px(540.0)), cx));
+            WindowBounds::Windowed(Bounds::centered(None, size(px(480.0), px(620.0)), cx));
 
         cx.spawn(async move |_, cx| {
             cx.open_window(

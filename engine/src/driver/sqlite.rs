@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
 use sqlx::{Column as SqlxColumn, Row, TypeInfo};
 
@@ -38,6 +40,7 @@ impl SqliteDriver {
 
     async fn from_config(config: &FileDbConfig) -> Result<Self, EngineError> {
         let pool = SqlitePoolOptions::new()
+            .acquire_timeout(Duration::from_secs(config.acquire_timeout_secs))
             .max_connections(config.max_connections)
             .connect(&config.url)
             .await
@@ -429,6 +432,7 @@ mod tests {
         FileDbConfig {
             url: "sqlite::memory:".to_string(),
             max_connections: 5,
+            ..Default::default()
         }
     }
 
@@ -873,6 +877,7 @@ mod tests {
         let config = FileDbConfig {
             url: "sqlite::memory:".to_string(),
             max_connections: 5,
+            ..Default::default()
         };
         // Cần tokio runtime để tạo driver, nhưng generate_changeset_script không async
         // Tuy nhiên SqliteDriver::new là async.

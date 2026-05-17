@@ -7,7 +7,7 @@
 			"name": "TruyVanSQL Light",
 			"mode": "light",
 			"shadow": true,
-
+			"font.size": 16,
 			"colors": {
 				"accent.background": "#E0E0E080",
 				"accent.foreground": "#000000",
@@ -15,7 +15,8 @@
 				"foreground": "#000000",
 				"border": "#e4e4e7",
 				"ring": "#0060de",
-				"danger.foreground": "#FFFFFF",
+				"danger.foreground": "#ffffff",
+				"danger.background": "#E7000B",
 				"sidebar.background": "#FAFAFA00",
 				"list.active.background": "#0060de15",
 				"list.active.border": "#0060de",

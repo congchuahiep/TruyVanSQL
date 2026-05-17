@@ -9,6 +9,10 @@ pub struct NetworkDbConfig {
     pub kind: DatabaseKind,
     pub network: NetworkParams,
     pub max_connections: u32,
+    /// Thời gian timeout khi acquire connection từ pool (giây).
+    /// Áp dụng cho cả lần kết nối đầu tiên. Mặc định là 10 giây.
+    /// - `None` = không giới hạn (có thể treo đến 1-2 phút với host không tồn tại).
+    pub acquire_timeout_secs: u64,
 }
 
 impl NetworkDbConfig {

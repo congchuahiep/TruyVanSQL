@@ -1,14 +1,18 @@
 use std::collections::HashMap;
 
+use assets::AppIcon;
 use engine::ConnectionCategory;
 use engine::{DatabaseConfig, DatabaseKind, SqlClient};
 use gpui::prelude::*;
 use gpui::*;
+use gpui_component::alert::Alert;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::form::{field, h_form};
 use gpui_component::input::{Input, InputEvent, InputState};
+use gpui_component::popover::Popover;
 use gpui_component::scroll::ScrollableElement;
 use gpui_component::select::{Select, SelectEvent, SelectState};
+use gpui_component::spinner::Spinner;
 use gpui_component::{ActiveTheme, Disableable, IndexPath, Sizable, h_flex, v_flex};
 
 use crate::connection::ConnectionStore;
@@ -36,6 +40,7 @@ pub struct ConnectionWindow {
     selected_path: Option<String>,
 
     form_errors: HashMap<&'static str, SharedString>,
+    test_feedback: Option<(bool, SharedString)>,
 
     connection_store: Entity<ConnectionStore>,
 }
@@ -104,6 +109,7 @@ impl ConnectionWindow {
             database_input,
             selected_path: None,
             form_errors: HashMap::new(),
+            test_feedback: None,
             connection_store,
         };
 
@@ -119,6 +125,7 @@ impl ConnectionWindow {
             |this, _, event: &InputEvent, _, cx| {
                 if matches!(event, InputEvent::Change) {
                     this.form_errors.remove("name");
+                    this.test_feedback = None;
                     cx.notify();
                 }
             },
@@ -131,6 +138,7 @@ impl ConnectionWindow {
             |this, _, event: &InputEvent, _, cx| {
                 if matches!(event, InputEvent::Change) {
                     this.form_errors.remove("host");
+                    this.test_feedback = None;
                     cx.notify();
                 }
             },
@@ -150,6 +158,7 @@ impl ConnectionWindow {
                     } else {
                         this.form_errors.remove("port");
                     }
+                    this.test_feedback = None;
                     cx.notify();
                 }
             },
@@ -162,6 +171,7 @@ impl ConnectionWindow {
             |this, _, event: &InputEvent, _, cx| {
                 if matches!(event, InputEvent::Change) {
                     this.form_errors.remove("user");
+                    this.test_feedback = None;
                     cx.notify();
                 }
             },
@@ -174,6 +184,7 @@ impl ConnectionWindow {
             |this, _, event: &InputEvent, _, cx| {
                 if matches!(event, InputEvent::Change) {
                     this.form_errors.remove("database");
+                    this.test_feedback = None;
                     cx.notify();
                 }
             },
@@ -255,6 +266,7 @@ impl ConnectionWindow {
     /// Xử lý sự kiện thay đổi loại Database để kết nối.
     fn on_kind_changed(&mut self, kind: DatabaseKind, window: &mut Window, cx: &mut Context<Self>) {
         self.form_errors.clear();
+        self.test_feedback = None;
 
         let old_category = self.selected_kind.category();
         let new_category = kind.category();
@@ -340,18 +352,21 @@ impl ConnectionWindow {
 
     /// Xử lý sự kiện test kết nối
     fn on_test(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        let config = self.get_connection_config(cx);
+        let mut config = self.get_connection_config(cx);
+        config.set_acquire_timeout_secs(5);
+
         self.is_testing = true;
+        self.test_feedback = None;
         cx.notify();
 
         cx.spawn(async move |this, cx| {
             let result = SqlClient::test_connection(config).await;
             this.update(cx, |this, cx| {
                 this.is_testing = false;
-                match result {
-                    Ok(_) => tracing::info!("Kết nối thành công"),
-                    Err(e) => tracing::error!("Lỗi kết nối: {e}"),
-                }
+                this.test_feedback = Some(match &result {
+                    Ok(_) => (true, "Kết nối thành công!".into()),
+                    Err(e) => (false, e.to_string().into()),
+                });
                 cx.notify();
             })
             .ok();
@@ -562,47 +577,88 @@ impl Render for ConnectionWindow {
                     .vertical_scrollbar(&scroll_handle),
             )
             .child(
-                h_flex()
-                    .flex_shrink_0()
-                    .gap_1()
+                v_flex()
                     .px_6()
                     .py_4()
+                    .gap_3()
                     .border_t_1()
                     .border_color(theme.border)
                     .bg(theme.secondary)
                     .child(
-                        Button::new("btn-test")
-                            .link()
-                            .small()
-                            .label(if self.is_testing {
-                                "Đang kiểm tra..."
-                            } else {
-                                "Kiểm tra kết nối"
-                            })
-                            .loading(self.is_testing)
-                            .disabled(self.is_testing)
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.on_test(window, cx);
-                            })),
-                    )
-                    .child(div().flex_1())
-                    .child(
-                        Button::new("btn-cancel")
-                            .outline()
-                            .cursor_pointer()
-                            .label("Hủy")
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.on_cancel(window, cx);
-                            })),
-                    )
-                    .child(
-                        Button::new("btn-connect")
-                            .primary()
-                            .label("Kết nối")
-                            .cursor_pointer()
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.on_submit(window, cx);
-                            })),
+                        h_flex()
+                            .flex_shrink_0()
+                            .gap_1()
+                            .child(
+                                Button::new("btn-test")
+                                    .text()
+                                    .small()
+                                    .label(if self.is_testing {
+                                        "Đang kiểm tra..."
+                                    } else {
+                                        "Kiểm tra kết nối"
+                                    })
+                                    .cursor_pointer()
+                                    .text_color(cx.theme().blue)
+                                    .loading(self.is_testing)
+                                    .disabled(self.is_testing)
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.on_test(window, cx);
+                                    })),
+                            )
+                            .child(div().when_else(
+                                self.is_testing,
+                                |this| this.child(Spinner::new()),
+                                |this| {
+                                    this.when_some(
+                                        self.test_feedback.as_ref(),
+                                        |_this, (is_success, message)| {
+                                            div().child(
+                                                Popover::new("popover-test-result")
+                                                    .default_open(true)
+                                                    .anchor(Anchor::BottomLeft)
+                                                    .max_w_80()
+                                                    .trigger(
+                                                        Button::new("btn-test-result")
+                                                            .ml_1()
+                                                            .text()
+                                                            .text_color(cx.theme().blue)
+                                                            .icon(AppIcon::CircleCheck)
+                                                            .when(!*is_success, |this| {
+                                                                this.text_color(cx.theme().danger)
+                                                                    .icon(AppIcon::CircleX)
+                                                            })
+                                                            .cursor_pointer(),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .text_xs()
+                                                            .flex_1()
+                                                            .child(message.clone()),
+                                                    ),
+                                            )
+                                        },
+                                    )
+                                },
+                            ))
+                            .child(div().flex_1())
+                            .child(
+                                Button::new("btn-cancel")
+                                    .outline()
+                                    .cursor_pointer()
+                                    .label("Hủy")
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.on_cancel(window, cx);
+                                    })),
+                            )
+                            .child(
+                                Button::new("btn-connect")
+                                    .primary()
+                                    .label("Kết nối")
+                                    .cursor_pointer()
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.on_submit(window, cx);
+                                    })),
+                            ),
                     ),
             )
     }
