@@ -1,0 +1,250 @@
+Here is the English translation for the **Desktop Crate Structure Rules** document:
+
+# Desktop Crate Structure Rules
+
+## Overview
+
+* The Desktop crate is a **GUI application** (not a library intended to be exported to other crates).
+* Built with the GPUI framework — each View consists of a `struct` + `impl` + `Render` trait.
+* Feature-based structure: `panel/`, `workspace/`, `connection/`, `shared/`, `window/`.
+
+## Golden Rules
+
+### 1. `mod.rs` — Re-export ONLY, NO definitions
+
+Every `mod.rs` within the crate serves only to re-export modules. It **must never** contain structs, enums, impls, or logic:
+
+```rust
+// ✅ CORRECT
+mod query_editor;
+mod query_session;
+mod query_results;
+
+pub use query_editor::*;
+pub use query_session::*;
+pub use query_results::*;
+
+// ❌ INCORRECT — mod.rs containing logic
+pub struct SomeStruct { ... }
+impl SomeStruct { ... }
+
+```
+
+### 2. Single File Module — No mod.rs required
+
+When a module consists of only **one file** (one struct + impl), do not create a directory + `mod.rs`. Rust treats the file itself as the module:
+
+```
+panel/
+├── titlebar.rs        # Module "titlebar" — no mod.rs needed
+└── sidebar.rs         # Module "sidebar" — no mod.rs needed
+
+```
+
+When should you use a directory + `mod.rs`?
+
+* When the module has **2+ files** (sub-modules).
+* When you need to group multiple related items together.
+
+### 3. File name = snake_case of the primary struct
+
+| Struct | File name |
+| --- | --- |
+| `SqlEditorTab` | `sql_editor_tab.rs` |
+| `SmartDataGrid` | `smart_data_grid.rs` |
+| `QuerySession` | `query_session.rs` |
+| `GridState` | `grid_state.rs` |
+
+### 4. Maximum Module Depth: 4 levels from `src/`
+
+| Level | Example |
+| --- | --- |
+| 1 | `main.rs`, `action.rs` |
+| 2 | `workspace/`, `theme/`, `connection/` |
+| 3 | `panel/tab/`, `panel/sidebar.rs`, `shared/smart_data_grid/` |
+| 4 | `panel/tab_content/sql_editor/` |
+
+**A depth of 5 levels** (e.g., `panel/tab/content/sql_editor/...`) is **only acceptable** if each level has a clear domain meaning and there is no logical way to merge them.
+
+---
+
+## Standard Directory Structure
+
+```
+desktop/src/
+├── main.rs                         # Entry point (approx. 80 lines)
+├── action.rs                       # GPUI actions (approx. 50 lines)
+│
+├── component/                      # Shared custom UI components
+│   ├── mod.rs                      # Re-export only
+│   ├── tab.rs
+│   └── sidebar_menu_item.rs
+│
+├── connection/                      # Service: connection management
+│   ├── mod.rs                      # Re-export only
+│   ├── database_connection.rs         # DatabaseConnection + ConnectionStatus
+│   └── connection_store.rs         # ConnectionStore
+│
+├── theme/                           # Theme management
+│   ├── mod.rs                      # Re-export only
+│   └── mica.rs
+│
+├── workspace/                       # Root: coordinates all panels
+│   ├── mod.rs                      # Re-export only
+│   └── workspace.rs                # Workspace view + action handlers
+│
+├── panel/                           # Group: all UI panels
+│   ├── mod.rs                      # Re-export only
+│   ├── titlebar.rs                 # Single file module
+│   ├── sidebar.rs                  # Single file module
+│   │
+│   ├── tab/                        # Tab system (infrastructure)
+│   │   ├── mod.rs                  # Re-export only
+│   │   ├── tab_bar.rs              # TabBar view
+│   │   ├── tab_item.rs             # TabItem trait + TabInfo
+│   │   └── tab_manager.rs          # TabManager service
+│   │
+│   └── tab_content/                # Tab content implementations
+│       ├── mod.rs                  # Re-export only
+│       │
+│       ├── sql_editor/
+│       │   ├── mod.rs              # Re-export only
+│       │   ├── sql_editor_tab.rs
+│       │   ├── query_editor.rs
+│       │   ├── query_session.rs
+│       │   ├── query_results.rs
+│       │   ├── output_content.rs
+│       │   ├── query_table_delegate.rs
+│       │   └── query_toolbar.rs
+│       │
+│       └── table_viewer/
+│           ├── mod.rs              # Re-export only
+│           └── table_viewer_tab.rs
+│
+├── shared/                          # Shared: common utility components
+│   ├── mod.rs                      # Re-export only
+│   └── smart_data_grid/
+│       ├── mod.rs                  # Re-export only
+│       ├── smart_data_grid.rs
+│       ├── grid_state.rs
+│       ├── grid_delegate.rs
+│       ├── data_changeset_builder.rs
+│       └── grid_error.rs
+│
+└── window/                          # Secondary windows
+    ├── mod.rs                      # Re-export only
+    └── connection_window.rs
+
+```
+
+---
+
+## Naming Conventions
+
+| Type | Convention | Example |
+| --- | --- | --- |
+| Module (directory) | `snake_case`, domain description | `tab_content`, `smart_data_grid` |
+| Single file module | `snake_case`, domain description | `titlebar.rs`, `sidebar.rs` |
+| Struct/Enum | `UpperCamelCase` | `SqlEditorTab`, `TabInfo` |
+| Primary Struct File | `snake_case` of the struct | `sql_editor_tab.rs`, `grid_state.rs` |
+| Grouped Items File | `snake_case`, group description | `output_content.rs`, `grid_error.rs` |
+| Trait | `UpperCamelCase` | `TabItem`, `TableDelegate` |
+| Parent Module (infra vs impl) | Infra = `tab/`, Impl = `tab_content/` | `tab/` ≠ `tab_content/` |
+
+---
+
+## File Separation Rules
+
+### When to separate files?
+
+| Condition | Action |
+| --- | --- |
+| File > 300 lines | Consider moving sub-components to separate files |
+| File > 500 lines | **MANDATORY** separation (excluding main entry points) |
+| Impl block > 200 lines | Consider moving helper functions to a dedicated module |
+| Multiple helper structs/enums | Move them to their own files |
+
+### Exceptions — separation not required
+
+* `workspace.rs` (~200-300 lines): The main entry point for the workspace, containing action handlers.
+* `connection_window.rs` (~400 lines): Dialogs where logic is tightly coupled with the UI.
+* Files containing **only struct definitions** (< 50 lines, no impl blocks).
+
+---
+
+## Import Patterns
+
+### Cross-module imports
+
+```rust
+// Inside workspace.rs — importing from panel
+use crate::panel::sidebar::Explorer;
+use crate::panel::tab::tab_bar::TabBar;
+use crate::panel::tab::tab_manager::TabManager;
+use crate::panel::titlebar::Titlebar;
+
+// Inside sidebar.rs — opening a new tab
+use crate::panel::tab_content::sql_editor::sql_editor_tab::SqlEditorTab;
+use crate::panel::tab_content::table_viewer::table_viewer_tab::TableViewerTab;
+
+```
+
+### Reducing import length with `pub use`
+
+```rust
+// panel/tab_content/mod.rs — high-level re-export
+pub use sql_editor::sql_editor_tab::SqlEditorTab;
+pub use table_viewer::table_viewer_tab::TableViewerTab;
+
+// Then, in sidebar.rs:
+use crate::panel::tab_content::SqlEditorTab;  // Much cleaner!
+
+```
+
+---
+
+## Comparison with Engine Crate
+
+| Rule | Engine | Desktop |
+| --- | --- | --- |
+| `mod.rs` re-export only | ✅ Mandatory | ✅ Mandatory |
+| `pub mod` vs `mod` | `mod X;` (private) | `mod X;` (it's an app, no exports) |
+| `pub use` | Needed to export to crate root | Internal only (shortens paths) |
+| Single file module | ✅ | ✅ |
+| File size limit | ~500 lines | ~300 lines (Render code is verbose) |
+| Maximum depth | 2 levels | 4 levels |
+
+---
+
+## Specific Modules
+
+### `action.rs` — GPUI Actions Pattern
+
+This file **does not follow** the `mod.rs` rule because it uses GPUI's `actions!()` macro to define actions. This is a specific pattern required by the GPUI framework:
+
+```rust
+pub mod toolbar {
+    use gpui::actions;
+    actions!(toolbar, [NewDatabase, OpenFile, UseInMemory]);
+}
+
+```
+
+### `theme/mod.rs` — Free Functions Pattern
+
+This module contains only **free functions** (`init`, `change_theme`, `toggle_dark_light`) and no main struct. This is an acceptable pattern for utility modules.
+
+### `connection/` — Service Layer
+
+This module contains only **services/state**, no GPUI Views. There is no need for view separation as it only contains models and stores.
+
+---
+
+## Pre-commit Checklist
+
+* [ ] All `mod.rs` files contain only `mod X;` + `pub use X::*;` (no logic).
+* [ ] File name = snake_case of the primary struct.
+* [ ] No file exceeds 500 lines (except entry points).
+* [ ] Maximum depth is 4 levels from `src/`.
+* [ ] Import paths are clear; avoid `use super::*;` unless absolutely necessary.
+* [ ] Each module has a single clear responsibility (no "god modules").

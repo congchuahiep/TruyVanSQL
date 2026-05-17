@@ -6,7 +6,7 @@
 //! - Toggle giữa Light và Dark mode
 pub mod mica;
 
-use gpui::{App, SharedString, WindowBackgroundAppearance};
+use gpui::{App, SharedString};
 use gpui_component::{ActiveTheme as _, Theme, ThemeMode, ThemeRegistry};
 use std::path::PathBuf;
 use std::sync::OnceLock;
@@ -57,7 +57,10 @@ pub fn init(cx: &mut App) {
     });
 
     // Đồng bộ Mica backdrop dark/light mode khi theme thay đổi
+    #[cfg(all(feature = "mica", target_os = "windows"))]
     cx.observe_global::<Theme>(|cx| {
+        use gpui::WindowBackgroundAppearance;
+
         let is_dark = cx.theme().is_dark();
         for window in cx.windows().iter_mut() {
             window

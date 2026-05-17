@@ -1,0 +1,68 @@
+### Engine Crate Structure
+
+#### Overview
+
+* The `engine` crate is a Rust library that exclusively exposes **items** (structs, enums, traits, functions) and does **NOT** expose modules.
+* External imports are always flat: `use engine::DatabaseConfig;` — NOT `use engine::database_config::DatabaseConfig;`.
+* Consequently, every public item within the engine must have a **unique name** to avoid collisions.
+
+#### Module Pattern — "mod.rs is for re-exports only"
+
+Each feature module is a directory with a `mod.rs` file used solely for re-exporting; it does **NOT** define logic:
+
+```
+module_name/
+├── mod.rs              # ONLY: mod + pub use (no other definitions)
+├── primary_struct.rs   # Primary struct/enum (file name = snake_case of the struct)
+└── helper.rs           # Supporting items (assist the primary struct)
+
+```
+
+Example `mod.rs`:
+
+```rust
+mod primary_struct;
+mod helper;
+pub use primary_struct::*;
+pub use helper::*;
+
+```
+
+Example `lib.rs`:
+
+```rust
+mod module_name;           // private module
+pub use module_name::*;    // re-export items to the crate root
+
+```
+
+#### Naming Conventions
+
+| Item Type | Convention | Example |
+| --- | --- | --- |
+| Module | `snake_case`, accurate domain description | `database_config`, `query_result` |
+| Struct/Enum | `UpperCamelCase` | `DatabaseConfig`, `NetworkDbConfig` |
+| Primary Struct File | `snake_case` of that struct | `database_config.rs`, `network_db_config.rs` |
+| Grouped Items File | `snake_case`, group description | `kind.rs`, `modification.rs` |
+| Enum variant | `UpperCamelCase` | `Sqlite`, `Postgres`, `Integer` |
+| Trait | `UpperCamelCase` | `DatabaseDriver`, `SqlDialect` |
+| Function/Method | `snake_case` | `connection_url()`, `list_tables()` |
+
+**PRINCIPLE**: Do NOT use generic names (config, db, file, info) for modules. Names must accurately describe the domain: `database_config` instead of `config`.
+
+#### Exception for Files Matching Module Names
+
+When the primary struct has the same name as the module (e.g., `database_config/database_config.rs`), redundancy is **accepted** because:
+
+* `pub use` hides the redundancy — users only see `DatabaseConfig`.
+* It speeds up file navigation: file name = struct name.
+
+#### Exception for the `driver` Module
+
+The `driver` module may use `pub mod driver;` instead of `mod driver;` + `pub use` if external access to driver implementations is required. The `mod.rs` for drivers can contain traits and factory functions, as this serves as the public API defining the driver interface.
+
+#### Single Responsibility File Separation
+
+* Each file defines **one primary struct/enum** + items directly supporting it (helper structs, impl blocks, related types).
+* If a file is very short (< 50 lines) and items are tightly coupled, they can be merged into one file (e.g., `kind.rs` containing both `DatabaseKind` and `ConnectionCategory`).
+* If a file exceeds ~500 lines, consider further separation.

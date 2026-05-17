@@ -1,0 +1,1 @@
+Dự án sử dụng thư viện GPUI Component, tuy nhiên một số component còn tồn tại lỗi hoặc chưa đáp ứng đầy đủ yêu cầu. Do đó, module này được tạo ra nhằm tái triển khai và tùy chỉnh các component của GPUI để phù hợp hơn với nhu cầu cụ thể của dự án.

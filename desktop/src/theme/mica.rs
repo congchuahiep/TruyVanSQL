@@ -1,4 +1,8 @@
-#[cfg(target_os = "windows")]
+/// Đồng bộ dark/light mode cho Mica backdrop trên Windows.
+///
+/// Khi feature `mica` được bật, gọi DWM API để set immersive dark mode.
+/// Khi feature tắt, hàm là no-op (không làm gì).
+#[cfg(all(target_os = "windows", feature = "mica"))]
 pub fn sync_mica_dark_mode(window: &gpui::Window, is_dark: bool) {
     use raw_window_handle::HasWindowHandle;
     use windows::Win32::Graphics::Dwm::{DWMWA_USE_IMMERSIVE_DARK_MODE, DwmSetWindowAttribute};
@@ -21,6 +25,3 @@ pub fn sync_mica_dark_mode(window: &gpui::Window, is_dark: bool) {
         }
     }
 }
-
-#[cfg(not(target_os = "windows"))]
-pub fn sync_mica_dark_mode(_window: &gpui::Window, _is_dark: bool) {}

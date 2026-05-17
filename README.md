@@ -1,53 +1,54 @@
 # TruyVanSQL
 
-TruyVanSQL là một ứng dụng quản lý và truy vấn SQL hiện đại, mạnh mẽ, được xây dựng hoàn toàn bằng ngôn ngữ lập trình Rust. Ứng dụng tập trung vào hiệu năng cao, trải nghiệm người dùng mượt mà với giao diện đồ họa (GUI) dựa trên framework GPUI.
+SQL client đa nền tảng viết bằng Rust, sử dụng GPUI framework (Zed Editor) cho UI.
 
-## Kiến trúc dự án
+## Tính năng
 
-Dự án được tổ chức theo mô hình Rust Workspace với các thành phần chính:
+- **SQL Editor** với tab management
+- **Table Viewer** với editable data grid
+- **Connection Manager** — SQLite & PostgreSQL
+- **Custom Titlebar** với Mica backdrop (Windows)
+- **Theme System** với hot-reload
 
-- **`engine/`**: Thư viện lõi xử lý logic kết nối Database, thực thi truy vấn và quản lý Schema. Sử dụng `sqlx` làm driver chính. Hiện tại hỗ trợ SQLite và đang trong lộ trình hỗ trợ PostgreSQL/MySQL.
-- **`desktop/`**: Ứng dụng GUI chính sử dụng framework **GPUI** (được phát triển bởi đội ngũ tạo ra Zed editor). Đây là nơi chứa toàn bộ logic về giao diện, quản lý tab và Data Grid.
-- **`cli/`**: Giao diện dòng lệnh (đang phát triển).
-- **`docs/`**: Chứa tài liệu kỹ thuật, thiết kế và kế hoạch phát triển (`plan.md`).
+## Cấu trúc dự án
 
-## Công nghệ sử dụng
+```
+truyvansql/
+├── engine/                 # Thư viện lõi (library)
+├── desktop/               # Ứng dụng GUI (binary)
+├── assets/               # Icons (RustEmbed)
+├── cli/                  # CLI tool (WIP)
+├── docs/                 # Tài liệu kỹ thuật
+└── themes/               # JSON theme files
+```
 
-- **Language**: Rust (Edition 2024).
-- **GUI Framework**: [GPUI](https://github.com/zed-industries/zed).
-- **Database Engine**: [SQLx](https://github.com/launchbadge/sqlx).
-- **Runtime**: [Tokio](https://tokio.rs/).
-- **Component Library**: [gpui-component](https://github.com/longbridge/gpui-component).
+## Công nghệ
 
-## Hướng dẫn phát triển
+| Thành phần | Công nghệ                  |
+| ---------- | -------------------------- |
+| UI         | GPUI, gpui-component       |
+| Database   | sqlx (SQLite + PostgreSQL) |
+| Async      | tokio                      |
+| Icons      | RustEmbed                  |
 
-### 1. Cài đặt môi trường
-
-Đảm bảo bạn đã cài đặt Rust toolchain (phiên bản mới nhất hỗ trợ Edition 2024).
-
-### 2. Xây dựng dự án
+## Phát triển
 
 ```bash
+# Build
 cargo build
-```
 
-### 3. Chạy ứng dụng
-
-```bash
+# Run desktop
 cargo run -p desktop
-```
 
-### 4. Kiểm thử
-
-Dự án có hệ thống test tích hợp mạnh mẽ trong `engine/tests`:
-
-```bash
+# Test
 cargo test
 ```
 
-## Quy ước phát triển
+## Tài liệu
 
-- **Edition**: Luôn sử dụng Rust edition 2024.
-- **Dependency**: Các dependency dùng chung nên được khai báo tại `[workspace.dependencies]` trong file `Cargo.toml` ở thư mục gốc.
-- **UI Design**: Giao diện được thiết kế theo dạng Tab-based. Mọi tương tác nặng với Database phải được thực hiện bất đồng bộ (`async`) để tránh gây treo UI.
-- **Data Grid**: Sử dụng Virtual Scrolling để tối ưu hóa việc hiển thị lượng dữ liệu lớn (hàng trăm ngàn dòng).
+| File                                         | Mô tả                   |
+| -------------------------------------------- | ----------------------- |
+| [docs/architecture.md](docs/architecture.md) | Kiến trúc hệ thống      |
+| [docs/plan.md](docs/plan.md)                 | Roadmap & trạng thái    |
+| [docs/gpui/](docs/gpui/)                     | GPUI framework docs     |
+| [desktop/.rules](desktop/.rules)             | Desktop structure rules |

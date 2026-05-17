@@ -220,9 +220,7 @@ impl SidebarItem for SidebarMenuItem {
                     .when(!is_collapsed, |this| {
                         this.h_7()
                             .when(is_loading, |this| {
-                                this.child(
-                                    Icon::new(AppIcon::Loader).size_4(),
-                                )
+                                this.child(Icon::new(AppIcon::Loader).size_4())
                             })
                             .when_some(open_state.clone(), |this, open_state| {
                                 let is_open_for_caret = is_open;

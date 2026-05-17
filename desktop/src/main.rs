@@ -1,14 +1,14 @@
 mod action;
 mod component;
 mod connection;
+mod panel;
 mod shared;
-mod tab_sql_editor;
-mod tab_table_viewer;
 mod theme;
+mod window;
 mod workspace;
 
 use gpui::*;
-use gpui_component::{ActiveTheme as _, Root};
+use gpui_component::Root;
 use workspace::Workspace;
 
 #[tokio::main]
@@ -24,6 +24,11 @@ async fn main() {
             KeyBinding::new("ctrl-n", action::toolbar::NewDatabase, Some("app")),
             KeyBinding::new("ctrl-o", action::toolbar::OpenFile, Some("app")),
             KeyBinding::new("ctrl-shift-m", action::toolbar::UseInMemory, Some("app")),
+            KeyBinding::new(
+                "ctrl-shift-c",
+                action::connection::ConnectDatabase,
+                Some("app"),
+            ),
             KeyBinding::new("ctrl-enter", action::query::ExecuteQuery, Some("app")),
             KeyBinding::new("ctrl-c", action::datagrid::CopyCell, Some("data-grid")),
             KeyBinding::new("enter", action::datagrid::StartEdit, Some("data-grid")),
@@ -52,14 +57,21 @@ async fn main() {
                     #[cfg(target_os = "linux")]
                     window_decorations: Some(WindowDecorations::Client),
                     #[cfg(target_os = "linux")]
-                    window_background: WindowBackgroundAppearance::Transparent,
-                    #[cfg(target_os = "windows")]
+                    window_background: WindowBackgroundAppearance::Blurred,
+                    #[cfg(target_os = "macos")]
+                    window_background: WindowBackgroundAppearance::Blurred,
+                    #[cfg(all(feature = "mica", target_os = "windows"))]
                     window_background: WindowBackgroundAppearance::MicaBackdrop,
+                    #[cfg(all(not(feature = "mica"), target_os = "windows"))]
+                    window_background: WindowBackgroundAppearance::Opaque,
                     ..Default::default()
                 },
                 |window, cx| {
-                    #[cfg(target_os = "windows")]
-                    crate::theme::mica::sync_mica_dark_mode(window, cx.theme().is_dark());
+                    #[cfg(all(feature = "mica", target_os = "windows"))]
+                    {
+                        use gpui::ActiveTheme;
+                        crate::theme::mica::sync_mica_dark_mode(window, cx.theme().is_dark());
+                    }
                     let view = cx.new(|cx| Workspace::new(window, cx));
                     cx.new(|cx| Root::new(view, window, cx))
                 },

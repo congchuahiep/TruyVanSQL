@@ -21,6 +21,11 @@ pub mod datagrid {
     );
 }
 
+pub mod connection {
+    use gpui::actions;
+    actions!(connection, [ConnectDatabase]);
+}
+
 pub mod app {
     use gpui::actions;
     actions!(app, [Quit]);
