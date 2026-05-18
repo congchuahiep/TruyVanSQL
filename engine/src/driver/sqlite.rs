@@ -289,13 +289,14 @@ impl DatabaseDriver for SqliteDriver {
     }
 
     async fn list_tables(&self, schema: &str) -> Result<Vec<TableBrief>, EngineError> {
+        // SQLite chỉ có 1 schema "main", nên schema param được bỏ qua
+        // Query trả về cả tables VÀ views (không phải system tables)
         let rows = sqlx::query(
             "SELECT name, type FROM sqlite_master
-             WHERE type = 'table'
-             AND schema_name = ?1
+             WHERE type IN ('table', 'view')
+             AND name NOT LIKE 'sqlite_%'
              ORDER BY name",
         )
-        .bind(schema)
         .fetch_all(&self.pool)
         .await
         .map_err(|e| EngineError::Schema(e.to_string()))?;
@@ -307,9 +308,15 @@ impl DatabaseDriver for SqliteDriver {
                 if name.starts_with("sqlite_") {
                     return None;
                 }
+                let kind_str: String = row.try_get("type").ok()?;
+                let kind = if kind_str == "view" {
+                    TableKind::View
+                } else {
+                    TableKind::Table
+                };
                 Some(TableBrief {
                     name,
-                    kind: TableKind::Table,
+                    kind,
                     schema_name: Some(schema.to_string()),
                 })
             })
@@ -319,13 +326,13 @@ impl DatabaseDriver for SqliteDriver {
     }
 
     async fn list_views(&self, schema: &str) -> Result<Vec<TableBrief>, EngineError> {
+        // SQLite chỉ có 1 schema "main", nên schema param được bỏ qua
         let rows = sqlx::query(
             "SELECT name FROM sqlite_master
              WHERE type = 'view'
-             AND schema_name = ?1
+             AND name NOT LIKE 'sqlite_%'
              ORDER BY name",
         )
-        .bind(schema)
         .fetch_all(&self.pool)
         .await
         .map_err(|e| EngineError::Schema(e.to_string()))?;
@@ -599,7 +606,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_tables_empty() {
         let driver = create_driver().await;
-        let tables = driver.list_tables().await.unwrap();
+        let tables = driver.list_tables("main").await.unwrap();
         assert!(tables.is_empty());
     }
 
@@ -619,7 +626,7 @@ mod tests {
             .await
             .unwrap();
 
-        let tables = driver.list_tables().await.unwrap();
+        let tables = driver.list_tables("main").await.unwrap();
         assert_eq!(tables.len(), 3);
         let names: Vec<&str> = tables.iter().map(|t| t.name.as_str()).collect();
         assert!(names.contains(&"users"));
@@ -641,7 +648,7 @@ mod tests {
             .await
             .unwrap();
 
-        let tables = driver.list_tables().await.unwrap();
+        let tables = driver.list_tables("main").await.unwrap();
         assert_eq!(tables.len(), 2);
 
         let view = tables.iter().find(|t| t.kind == TableKind::View).unwrap();
@@ -665,7 +672,7 @@ mod tests {
             .await
             .unwrap();
 
-        let tables = driver.list_tables().await.unwrap();
+        let tables = driver.list_tables("main").await.unwrap();
         let names: Vec<&str> = tables.iter().map(|t| t.name.as_str()).collect();
         // sqlite_sequence nếu có thì không nên nằm trong danh sách
         assert!(!names.iter().any(|n| n.starts_with("sqlite_")));
@@ -679,7 +686,7 @@ mod tests {
             .await
             .unwrap();
 
-        let views = driver.list_views().await.unwrap();
+        let views = driver.list_views("main").await.unwrap();
         assert!(views.is_empty());
     }
 
@@ -699,10 +706,10 @@ mod tests {
             .await
             .unwrap();
 
-        let views = driver.list_views().await.unwrap();
+        let views = driver.list_views("main").await.unwrap();
         assert_eq!(views.len(), 2);
-        assert!(views.contains(&"active_users".to_string()));
-        assert!(views.contains(&"user_names".to_string()));
+        assert!(views.iter().any(|v| v.name == "active_users"));
+        assert!(views.iter().any(|v| v.name == "user_names"));
     }
 
     #[tokio::test]
