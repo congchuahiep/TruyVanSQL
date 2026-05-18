@@ -1,4 +1,5 @@
 mod column_info;
+mod database_brief;
 mod foreign_key_info;
 mod index_info;
 mod modification;
@@ -8,6 +9,7 @@ mod table_info;
 mod table_kind;
 
 pub use column_info::*;
+pub use database_brief::*;
 pub use foreign_key_info::*;
 pub use index_info::*;
 pub use modification::*;

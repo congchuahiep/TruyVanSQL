@@ -92,4 +92,14 @@ impl DatabaseConfig {
             Self::Network(c) => c.acquire_timeout_secs = secs,
         }
     }
+
+    /// Đặt database name cho connection hiện tại.
+    ///
+    /// Chỉ áp dụng cho network-based databases (PostgreSQL, MySQL, etc).
+    /// SQLite không có khái niệm nhiều databases nên method này không làm gì.
+    pub fn set_database(&mut self, database: &str) {
+        if let Self::Network(c) = self {
+            c.network.database = database.to_string();
+        }
+    }
 }

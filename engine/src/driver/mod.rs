@@ -4,7 +4,7 @@ pub mod sqlite;
 use crate::database_config::{DatabaseConfig, DatabaseKind};
 use crate::error::EngineError;
 use crate::result::QueryResult;
-use crate::schema::{DataChangeset, TableBrief, TableInfo};
+use crate::schema::{DataChangeset, DatabaseBrief, SchemaBrief, TableBrief, TableInfo};
 
 /// Cung cấp các quy tắc định dạng SQL (Dialect) cho từng loại Database
 ///
@@ -118,11 +118,18 @@ pub trait DatabaseDriver: SqlDialect + Send + Sync {
     // =   Schema Introspection   =
     // ============================
 
-    /// Liệt kê tất cả tables và views trong database.
-    async fn list_tables(&self) -> Result<Vec<TableBrief>, EngineError>;
+    /// Liệt kê tables trong một schema cụ thể.
+    async fn list_tables(&self, schema: &str) -> Result<Vec<TableBrief>, EngineError>;
 
-    /// Liệt kê tất cả views trong database.
-    async fn list_views(&self) -> Result<Vec<String>, EngineError>;
+    /// Liệt kê views trong một schema cụ thể.
+    async fn list_views(&self, schema: &str) -> Result<Vec<TableBrief>, EngineError>;
+
+    /// Liệt kê tất cả databases trong server (chỉ PostgreSQL).
+    /// Với SQLite luôn trả về vec rỗng vì SQLite không có khái niệm nhiều databases.
+    async fn list_databases(&self) -> Result<Vec<DatabaseBrief>, EngineError>;
+
+    /// Liệt kê tất cả schemas trong database hiện tại.
+    async fn list_schemas(&self) -> Result<Vec<SchemaBrief>, EngineError>;
 
     /// Lấy thông tin chi tiết của một table.
     async fn get_table_info(&self, table_name: &str) -> Result<TableInfo, EngineError>;

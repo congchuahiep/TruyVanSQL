@@ -8,7 +8,8 @@ use crate::driver::{DatabaseDriver, SqlDialect};
 use crate::error::EngineError;
 use crate::result::{Column, QueryResult, Row as ResultRow, Value};
 use crate::schema::{
-    ColumnInfo, ForeignKeyInfo, IndexInfo, PrimaryKey, TableBrief, TableInfo, TableKind,
+    ColumnInfo, DatabaseBrief, ForeignKeyInfo, IndexInfo, PrimaryKey, SchemaBrief, SchemaKind,
+    TableBrief, TableInfo, TableKind,
 };
 use crate::{DatabaseKind, NetworkDbConfig};
 
@@ -149,13 +150,25 @@ impl DatabaseDriver for PostgresDriver {
         "PostgreSQL"
     }
 
-    async fn list_tables(&self) -> Result<Vec<TableBrief>, EngineError> {
+    async fn list_tables(&self, schema: &str) -> Result<Vec<TableBrief>, EngineError> {
+        println!(
+            "SELECT table_schema, table_name, table_type \
+         FROM information_schema.tables \
+         WHERE table_schema NOT LIKE 'pg_%' AND table_schema <> 'information_schema' \
+         AND table_schema = {schema} \
+         AND table_type = 'BASE TABLE' \
+         ORDER BY table_name"
+        );
+
         let rows = sqlx::query(
-            "SELECT tablename, 'TABLE' AS obj_type FROM pg_tables WHERE schemaname = 'public' \
-             UNION ALL \
-             SELECT viewname, 'VIEW' AS obj_type FROM pg_views WHERE schemaname = 'public' \
-             ORDER BY obj_type, tablename",
+            "SELECT table_schema, table_name, table_type \
+             FROM information_schema.tables \
+             WHERE table_schema NOT LIKE 'pg_%' AND table_schema <> 'information_schema' \
+             AND table_schema = $1 \
+             AND table_type = 'BASE TABLE' \
+             ORDER BY table_name",
         )
+        .bind(schema)
         .fetch_all(&self.pool)
         .await
         .map_err(|e| EngineError::Schema(e.to_string()))?;
@@ -163,34 +176,89 @@ impl DatabaseDriver for PostgresDriver {
         let tables: Vec<TableBrief> = rows
             .iter()
             .map(|row| {
-                let name: String = row.try_get("tablename").unwrap_or_default();
-                let obj_type: String = row.try_get("obj_type").unwrap_or_default();
-                let kind = if obj_type == "VIEW" {
-                    TableKind::View
-                } else {
-                    TableKind::Table
-                };
-                TableBrief { name, kind }
+                let schema_name: String = row.try_get("table_schema").unwrap_or_default();
+                let name: String = row.try_get("table_name").unwrap_or_default();
+                TableBrief {
+                    name,
+                    kind: TableKind::Table,
+                    schema_name: Some(schema_name),
+                }
             })
             .collect();
 
         Ok(tables)
     }
 
-    async fn list_views(&self) -> Result<Vec<String>, EngineError> {
+    async fn list_views(&self, schema: &str) -> Result<Vec<TableBrief>, EngineError> {
         let rows = sqlx::query(
-            "SELECT viewname FROM pg_views WHERE schemaname = 'public' ORDER BY viewname",
+            "SELECT table_schema, table_name \
+             FROM information_schema.tables \
+             WHERE table_schema NOT LIKE 'pg_%' AND table_schema <> 'information_schema' \
+             AND table_schema = $1 \
+             AND table_type = 'VIEW' \
+             ORDER BY table_name",
+        )
+        .bind(schema)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| EngineError::Schema(e.to_string()))?;
+
+        let views: Vec<TableBrief> = rows
+            .iter()
+            .map(|row| {
+                let schema_name: String = row.try_get("table_schema").unwrap_or_default();
+                let name: String = row.try_get("table_name").unwrap_or_default();
+                TableBrief {
+                    name,
+                    kind: TableKind::View,
+                    schema_name: Some(schema_name),
+                }
+            })
+            .collect();
+
+        Ok(views)
+    }
+
+    async fn list_databases(&self) -> Result<Vec<DatabaseBrief>, EngineError> {
+        let rows = sqlx::query(
+            "SELECT datname FROM pg_database WHERE datistemplate = false AND datallowconn = true ORDER BY datname",
         )
         .fetch_all(&self.pool)
         .await
         .map_err(|e| EngineError::Schema(e.to_string()))?;
 
-        let views: Vec<String> = rows
+        let databases: Vec<DatabaseBrief> = rows
             .iter()
-            .filter_map(|row| row.try_get::<String, _>("viewname").ok())
+            .map(|row| {
+                let name: String = row.try_get("datname").unwrap_or_default();
+                DatabaseBrief { name }
+            })
             .collect();
 
-        Ok(views)
+        Ok(databases)
+    }
+
+    async fn list_schemas(&self) -> Result<Vec<SchemaBrief>, EngineError> {
+        let rows =
+            sqlx::query("SELECT schema_name FROM information_schema.schemata ORDER BY schema_name")
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| EngineError::Schema(e.to_string()))?;
+
+        let schemas: Vec<SchemaBrief> = rows
+            .iter()
+            .map(|row| {
+                let name: String = row.try_get("schema_name").unwrap_or_default();
+                let kind = if name.starts_with("pg_") || name == "information_schema" {
+                    SchemaKind::System
+                } else {
+                    SchemaKind::User
+                };
+                SchemaBrief { name, kind }
+            })
+            .collect();
+
+        Ok(schemas)
     }
 
     async fn get_table_info(&self, table_name: &str) -> Result<TableInfo, EngineError> {

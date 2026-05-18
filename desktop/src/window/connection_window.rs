@@ -92,7 +92,6 @@ impl ConnectionWindow {
         let database_input = cx.new(|cx| {
             InputState::new(window, cx)
                 .placeholder("postgres")
-                .default_value("postgres")
         });
 
         let mut this = Self {
@@ -244,12 +243,6 @@ impl ConnectionWindow {
                 if user.trim().is_empty() {
                     self.form_errors
                         .insert("user", "User không được để trống".into());
-                }
-
-                let database = self.database_input.read(cx).value().to_string();
-                if database.trim().is_empty() {
-                    self.form_errors
-                        .insert("database", "Database không được để trống".into());
                 }
             }
             ConnectionCategory::FileBased => {

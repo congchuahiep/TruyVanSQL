@@ -7,7 +7,8 @@ use crate::driver::{DatabaseDriver, SqlDialect};
 use crate::error::EngineError;
 use crate::result::{Column, QueryResult, Row as ResultRow, Value};
 use crate::schema::{
-    ColumnInfo, ForeignKeyInfo, IndexInfo, PrimaryKey, TableBrief, TableInfo, TableKind,
+    ColumnInfo, DatabaseBrief, ForeignKeyInfo, IndexInfo, PrimaryKey, SchemaBrief, SchemaKind,
+    TableBrief, TableInfo, TableKind,
 };
 use crate::{DatabaseConfig, FileDbConfig};
 
@@ -287,12 +288,14 @@ impl DatabaseDriver for SqliteDriver {
         "SQLite"
     }
 
-    async fn list_tables(&self) -> Result<Vec<TableBrief>, EngineError> {
+    async fn list_tables(&self, schema: &str) -> Result<Vec<TableBrief>, EngineError> {
         let rows = sqlx::query(
             "SELECT name, type FROM sqlite_master
-             WHERE type IN ('table', 'view')
-             ORDER BY type, name",
+             WHERE type = 'table'
+             AND schema_name = ?1
+             ORDER BY name",
         )
+        .bind(schema)
         .fetch_all(&self.pool)
         .await
         .map_err(|e| EngineError::Schema(e.to_string()))?;
@@ -301,37 +304,59 @@ impl DatabaseDriver for SqliteDriver {
             .iter()
             .filter_map(|row| {
                 let name: String = row.try_get("name").ok()?;
-                let obj_type: String = row.try_get("type").ok()?;
-
-                // Bỏ qua system tables (bắt đầu bằng sqlite_)
                 if name.starts_with("sqlite_") {
                     return None;
                 }
-
-                let kind = match obj_type.as_str() {
-                    "view" => TableKind::View,
-                    _ => TableKind::Table,
-                };
-
-                Some(TableBrief { name, kind })
+                Some(TableBrief {
+                    name,
+                    kind: TableKind::Table,
+                    schema_name: Some(schema.to_string()),
+                })
             })
             .collect();
 
         Ok(tables)
     }
 
-    async fn list_views(&self) -> Result<Vec<String>, EngineError> {
-        let rows = sqlx::query("SELECT name FROM sqlite_master WHERE type = 'view' ORDER BY name")
-            .fetch_all(&self.pool)
-            .await
-            .map_err(|e| EngineError::Schema(e.to_string()))?;
+    async fn list_views(&self, schema: &str) -> Result<Vec<TableBrief>, EngineError> {
+        let rows = sqlx::query(
+            "SELECT name FROM sqlite_master
+             WHERE type = 'view'
+             AND schema_name = ?1
+             ORDER BY name",
+        )
+        .bind(schema)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| EngineError::Schema(e.to_string()))?;
 
-        let views: Vec<String> = rows
+        let views: Vec<TableBrief> = rows
             .iter()
-            .filter_map(|row| row.try_get::<String, _>("name").ok())
+            .filter_map(|row| {
+                let name: String = row.try_get("name").ok()?;
+                if name.starts_with("sqlite_") {
+                    return None;
+                }
+                Some(TableBrief {
+                    name,
+                    kind: TableKind::View,
+                    schema_name: Some(schema.to_string()),
+                })
+            })
             .collect();
 
         Ok(views)
+    }
+
+    async fn list_databases(&self) -> Result<Vec<DatabaseBrief>, EngineError> {
+        Ok(vec![])
+    }
+
+    async fn list_schemas(&self) -> Result<Vec<SchemaBrief>, EngineError> {
+        Ok(vec![SchemaBrief {
+            name: "main".to_string(),
+            kind: SchemaKind::User,
+        }])
     }
 
     async fn get_table_info(&self, table_name: &str) -> Result<TableInfo, EngineError> {

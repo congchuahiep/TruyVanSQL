@@ -85,7 +85,7 @@ impl QuerySession {
             });
 
             if is_ddl(&sql) {
-                conn_entity.update(cx, |c, cx| c.refresh_metadata(cx));
+                conn_entity.update(cx, |c, cx| c.refresh_databases(cx));
             }
         })
         .detach();
