@@ -22,6 +22,10 @@ impl<T> LoadState<T> {
         matches!(self, LoadState::Loaded(_))
     }
 
+    pub fn is_idle(&self) -> bool {
+        matches!(self, LoadState::Idle)
+    }
+
     pub fn is_error(&self) -> bool {
         matches!(self, LoadState::Error(_))
     }

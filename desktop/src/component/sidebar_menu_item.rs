@@ -344,7 +344,7 @@ impl SidebarItem for SidebarMenuItem {
                         .id("submenu")
                         .border_l_1()
                         .border_color(cx.theme().sidebar_border)
-                        .ml_2p5()
+                        .ml_3()
                         // .pl_2()
                         .children(self.children.into_iter().enumerate().map(|(ix, item)| {
                             let child_id = format!("{}-{}", id, ix);
