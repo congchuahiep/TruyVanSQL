@@ -6,11 +6,7 @@ use crate::action::connection::ConnectDatabase;
 use crate::action::query::{ExecuteQuery, NewQuery};
 use crate::action::toolbar::{NewDatabase, OpenFile, UseInMemory};
 use crate::connection::ConnectionStore;
-use crate::panel::Explorer;
-use crate::panel::SqlEditorTab;
-use crate::panel::TabManager;
-use crate::panel::Titlebar;
-use crate::panel::tab::TabBar;
+use crate::panel::{Explorer, SqlEditorTab, TabBar, TabManager, Titlebar};
 use crate::window::ConnectionWindow;
 
 pub struct Workspace {

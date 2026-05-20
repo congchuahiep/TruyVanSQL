@@ -5,11 +5,12 @@ use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, ClickEvent, ElementId, InteractiveElement as _, IntoElement,
     ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled, Window, div,
-    percentage, px,
+    percentage,
 };
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::menu::{ContextMenuExt, PopupMenu};
 use gpui_component::sidebar::SidebarItem;
+use gpui_component::spinner::Spinner;
 use gpui_component::{
     ActiveTheme as _, Collapsible, Icon, Sizable as _, StyledExt, h_flex, v_flex,
 };
@@ -19,17 +20,28 @@ use std::rc::Rc;
 pub struct SidebarMenuItem {
     icon: Option<Icon>,
     label: SharedString,
-    handler: Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>,
+    handler: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>>,
     on_double_click: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>>,
-    expand_on_double_click: bool,
+    on_expand: Option<Rc<dyn Fn(&mut Window, &mut App) + 'static>>,
+    double_click_to_expand: bool,
+    indented: bool,
     loading: bool,
     active: bool,
     default_open: bool,
-    collapsed: bool,
     children: Vec<Self>,
     suffix: Option<Rc<dyn Fn(&mut Window, &mut App) -> AnyElement + 'static>>,
     disabled: bool,
     context_menu: Option<Rc<dyn Fn(PopupMenu, &mut Window, &mut App) -> PopupMenu + 'static>>,
+}
+
+impl Collapsible for SidebarMenuItem {
+    fn is_collapsed(&self) -> bool {
+        false
+    }
+
+    fn collapsed(self, _collapsed: bool) -> Self {
+        self
+    }
 }
 
 impl SidebarMenuItem {
@@ -37,12 +49,13 @@ impl SidebarMenuItem {
         Self {
             icon: None,
             label: label.into(),
-            handler: Rc::new(|_, _, _| {}),
+            handler: None,
             on_double_click: None,
-            expand_on_double_click: false,
+            on_expand: None,
+            double_click_to_expand: true,
+            indented: false,
             loading: false,
             active: false,
-            collapsed: false,
             default_open: false,
             children: Vec::new(),
             suffix: None,
@@ -65,7 +78,7 @@ impl SidebarMenuItem {
         mut self,
         handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     ) -> Self {
-        self.handler = Rc::new(handler);
+        self.handler = Some(Rc::new(handler));
         self
     }
 
@@ -77,18 +90,23 @@ impl SidebarMenuItem {
         self
     }
 
-    pub fn expand_on_double_click(mut self, enable: bool) -> Self {
-        self.expand_on_double_click = enable;
+    pub fn on_expand(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
+        self.on_expand = Some(Rc::new(handler));
+        self
+    }
+
+    pub fn double_click_to_expand(mut self, enable: bool) -> Self {
+        self.double_click_to_expand = enable;
+        self
+    }
+
+    pub fn indented(mut self, indented: bool) -> Self {
+        self.indented = indented;
         self
     }
 
     pub fn loading(mut self, loading: bool) -> Self {
         self.loading = loading;
-        self
-    }
-
-    pub fn collapsed(mut self, collapsed: bool) -> Self {
-        self.collapsed = collapsed;
         self
     }
 
@@ -123,7 +141,7 @@ impl SidebarMenuItem {
     }
 
     fn needs_caret(&self) -> bool {
-        self.is_submenu() || self.expand_on_double_click || self.loading
+        self.is_submenu() || self.on_expand.is_some() || self.double_click_to_expand || self.loading
     }
 
     pub fn context_menu(
@@ -135,17 +153,6 @@ impl SidebarMenuItem {
     }
 }
 
-impl Collapsible for SidebarMenuItem {
-    fn is_collapsed(&self) -> bool {
-        self.collapsed
-    }
-
-    fn collapsed(mut self, collapsed: bool) -> Self {
-        self.collapsed = collapsed;
-        self
-    }
-}
-
 impl SidebarItem for SidebarMenuItem {
     fn render(
         self,
@@ -153,24 +160,28 @@ impl SidebarItem for SidebarMenuItem {
         window: &mut Window,
         cx: &mut App,
     ) -> impl IntoElement {
-        let has_double_click = self.on_double_click.is_some() || self.expand_on_double_click;
-        let expand_on_double_click = self.expand_on_double_click;
-        let is_loading = self.loading;
+        let has_double_click = self.on_double_click.is_some() || self.double_click_to_expand;
+        let double_click_to_expand = self.double_click_to_expand;
+        let loading = self.loading;
         let default_open = self.default_open;
         let id = id.into();
-        let handler = self.handler.clone();
+        let click_handler = self.handler.clone();
         let double_click_handler = self.on_double_click.clone();
-        let is_collapsed = self.collapsed;
+        let on_expand = self.on_expand.clone();
         let is_active = self.active;
         let is_hoverable = !is_active && !self.disabled;
         let is_disabled = self.disabled;
         let needs_caret = self.needs_caret();
+        let indented = self.indented;
 
         let open_state = if needs_caret {
             Some(window.use_keyed_state(id.clone(), cx, |_, _| default_open))
         } else {
             None
         };
+
+        let open_state_for_caret = open_state.clone();
+        let open_state_for_click = open_state.clone();
 
         let last_click_state = if has_double_click {
             Some(window.use_keyed_state(
@@ -182,9 +193,7 @@ impl SidebarItem for SidebarMenuItem {
             None
         };
 
-        let is_open = open_state
-            .as_ref()
-            .map_or(false, |s| !is_collapsed && *s.read(cx));
+        let is_open = open_state.as_ref().map_or(false, |s| *s.read(cx));
 
         div()
             .id(id.clone())
@@ -195,9 +204,8 @@ impl SidebarItem for SidebarMenuItem {
                     .size_full()
                     .overflow_x_hidden()
                     .flex_shrink_0()
-                    .p_1()
                     .cursor_pointer()
-                    .gap_x(px(5.))
+                    .p_1()
                     .rounded(cx.theme().radius)
                     .text_sm()
                     .when(is_hoverable, |this| {
@@ -211,68 +219,71 @@ impl SidebarItem for SidebarMenuItem {
                             .bg(cx.theme().sidebar_accent)
                             .text_color(cx.theme().sidebar_accent_foreground)
                     })
-                    .when(is_collapsed, |this| {
-                        this.justify_center().when(is_active, |this| {
-                            this.bg(cx.theme().sidebar_accent)
-                                .text_color(cx.theme().sidebar_accent_foreground)
-                        })
-                    })
-                    .when(!is_collapsed, |this| {
-                        this.h_7()
-                            .when(is_loading, |this| {
-                                this.child(Icon::new(AppIcon::Loader).size_4())
-                            })
-                            .when_some(open_state.clone(), |this, open_state| {
-                                let is_open_for_caret = is_open;
+                    .h_7()
+                    .when(needs_caret, |this| {
+                        this.when_else(
+                            loading,
+                            |this| this.pl_2().child(Spinner::new()),
+                            |this| {
                                 this.child(
                                     Button::new("caret")
                                         .xsmall()
                                         .ghost()
+                                        .cursor_pointer()
                                         .icon(
                                             Icon::new(AppIcon::ChevronRight)
                                                 .size_4()
-                                                .when(is_open_for_caret, |this| {
+                                                .when(is_open, |this| {
                                                     this.rotate(percentage(90. / 360.))
                                                 }),
                                         )
                                         .on_click({
-                                            move |_, _, cx| {
+                                            let on_expand = on_expand.clone();
+                                            move |_, window, cx| {
                                                 cx.stop_propagation();
-                                                open_state.update(cx, |is_open, cx| {
-                                                    *is_open = !*is_open;
-                                                    cx.notify();
-                                                })
+                                                if let Some(ref entity) = open_state_for_caret {
+                                                    let mut was_expanding = false;
+                                                    entity.update(cx, |is_open, _cx| {
+                                                        was_expanding = !*is_open;
+                                                        *is_open = !*is_open;
+                                                    });
+                                                    if was_expanding {
+                                                        if let Some(ref handler) = on_expand {
+                                                            handler(window, cx);
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }),
                                 )
-                            })
+                            },
+                        )
+                    })
+                    .when(!needs_caret && indented, |this| this.pl_6())
+                    .child(
+                        h_flex()
+                            .flex_1()
+                            .gap_x_1()
+                            .justify_between()
+                            .overflow_x_hidden()
                             .child(
                                 h_flex()
                                     .flex_1()
-                                    .gap_x_1()
-                                    .justify_between()
                                     .overflow_x_hidden()
-                                    .child(
-                                        h_flex()
-                                            .flex_1()
-                                            .overflow_x_hidden()
-                                            .gap_x_1()
-                                            .when_some(self.icon.clone(), |this, icon| {
-                                                this.child(icon)
-                                            })
-                                            .child(self.label.clone()),
-                                    )
-                                    .when_some(self.suffix.clone(), |this, suffix| {
-                                        this.child(suffix(window, cx).into_any_element())
-                                    }),
+                                    .gap_x_1()
+                                    .when_some(self.icon.clone(), |this, icon| this.child(icon))
+                                    .child(self.label.clone()),
                             )
-                    })
+                            .when_some(self.suffix.clone(), |this, suffix| {
+                                this.child(suffix(window, cx).into_any_element())
+                            }),
+                    )
                     .when(is_disabled, |this| {
                         this.text_color(cx.theme().muted_foreground)
                     })
                     .when(!is_disabled, |this| {
                         this.on_click({
-                            let open_state = open_state.clone();
+                            let open_state = open_state_for_click.clone();
                             let last_click_state = last_click_state.clone();
                             move |ev, window, cx| {
                                 if has_double_click {
@@ -285,30 +296,33 @@ impl SidebarItem for SidebarMenuItem {
                                         let last = *lc.read(cx);
                                         if now - last < 300 {
                                             lc.update(cx, |ts, _| *ts = 0);
-                                            if expand_on_double_click {
-                                                if let Some(ref s) = open_state {
-                                                    s.update(cx, |is_open, cx| {
+
+                                            if double_click_to_expand {
+                                                if let Some(ref entity) = open_state {
+                                                    let mut was_expanding = false;
+                                                    entity.update(cx, |is_open, _cx| {
+                                                        was_expanding = !*is_open;
                                                         *is_open = !*is_open;
-                                                        cx.notify();
                                                     });
+                                                    if was_expanding {
+                                                        if let Some(ref handler) = on_expand {
+                                                            handler(window, cx);
+                                                        }
+                                                    }
                                                 }
                                             }
-                                            if let Some(ref dbl) = double_click_handler {
-                                                dbl(ev, window, cx);
+
+                                            if let Some(ref handler) = double_click_handler {
+                                                handler(ev, window, cx);
                                             }
                                             return;
                                         }
                                         lc.update(cx, |ts, _| *ts = now);
                                     }
-                                    handler(ev, window, cx);
-                                } else {
-                                    if let Some(ref s) = open_state {
-                                        s.update(cx, |is_open, cx| {
-                                            *is_open = !*is_open;
-                                            cx.notify();
-                                        });
+
+                                    if let Some(ref handler) = click_handler {
+                                        handler(ev, window, cx);
                                     }
-                                    handler(ev, window, cx);
                                 }
                             }
                         })
@@ -330,10 +344,7 @@ impl SidebarItem for SidebarMenuItem {
                         .id("submenu")
                         .border_l_1()
                         .border_color(cx.theme().sidebar_border)
-                        .gap_1()
-                        .ml(px(14.))
-                        .pl_2p5()
-                        .py_0p5()
+                        .ml(gpui::px(13.))
                         .children(self.children.into_iter().enumerate().map(|(ix, item)| {
                             let child_id = format!("{}-{}", id, ix);
                             item.render(child_id, window, cx).into_any_element()

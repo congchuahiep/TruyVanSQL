@@ -284,7 +284,7 @@ mod tests {
             .await
             .unwrap();
 
-        let tables = client.list_tables().await.unwrap();
+        let tables = client.list_tables("main").await.unwrap();
         assert_eq!(tables.len(), 2);
         assert!(tables.iter().any(|t| t.name == "users"));
         assert!(tables.iter().any(|t| t.name == "posts"));
@@ -293,7 +293,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_tables_empty() {
         let client = SqlClient::connect(sqlite_memory_config()).await.unwrap();
-        let tables = client.list_tables().await.unwrap();
+        let tables = client.list_tables("main").await.unwrap();
         assert!(tables.is_empty());
     }
 
@@ -309,7 +309,7 @@ mod tests {
             .await
             .unwrap();
 
-        let tables = client.list_tables().await.unwrap();
+        let tables = client.list_tables("main").await.unwrap();
         assert_eq!(tables.len(), 2);
         assert!(tables.iter().any(|t| t.kind == TableKind::View));
         assert!(tables.iter().any(|t| t.kind == TableKind::Table));
@@ -327,9 +327,9 @@ mod tests {
             .await
             .unwrap();
 
-        let views = client.list_views().await.unwrap();
+        let views = client.list_views("main").await.unwrap();
         assert_eq!(views.len(), 1);
-        assert_eq!(views[0], "active_users");
+        assert_eq!(views[0].name, "active_users");
     }
 
     #[tokio::test]

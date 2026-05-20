@@ -195,7 +195,9 @@ async fn test_aggregate_queries() {
         .await
         .unwrap();
     client
-        .execute("INSERT INTO scores (name, score) VALUES ('Alice', 90), ('Bob', 80), ('Carol', 95)")
+        .execute(
+            "INSERT INTO scores (name, score) VALUES ('Alice', 90), ('Bob', 80), ('Carol', 95)",
+        )
         .await
         .unwrap();
 
@@ -309,9 +311,7 @@ async fn test_error_handling_constraint_violation() {
         .unwrap();
 
     // UNIQUE constraint violation
-    let result = client
-        .execute("INSERT INTO test VALUES (2, 'Alice')")
-        .await;
+    let result = client.execute("INSERT INTO test VALUES (2, 'Alice')").await;
     assert!(result.is_err());
 }
 
@@ -359,10 +359,7 @@ async fn test_large_insert_and_select() {
             .unwrap();
     }
 
-    let result = client
-        .execute("SELECT COUNT(*) FROM test")
-        .await
-        .unwrap();
+    let result = client.execute("SELECT COUNT(*) FROM test").await.unwrap();
     match result {
         QueryResult::Query { rows, .. } => {
             assert_eq!(rows[0].values[0], Some(Value::Integer(100)));
@@ -381,10 +378,7 @@ async fn test_pragma_queries() {
         .unwrap();
 
     // PRAGMA table_info
-    let result = client
-        .execute("PRAGMA table_info(test)")
-        .await
-        .unwrap();
+    let result = client.execute("PRAGMA table_info(test)").await.unwrap();
     match result {
         QueryResult::Query { columns, rows } => {
             assert_eq!(columns.len(), 6); // cid, name, type, notnull, dflt_value, pk
@@ -408,7 +402,9 @@ async fn test_cte_query() {
         .unwrap();
 
     let result = client
-        .execute("WITH cte AS (SELECT val * 2 as doubled FROM test) SELECT * FROM cte ORDER BY doubled")
+        .execute(
+            "WITH cte AS (SELECT val * 2 as doubled FROM test) SELECT * FROM cte ORDER BY doubled",
+        )
         .await
         .unwrap();
     match result {
@@ -438,14 +434,12 @@ async fn test_schema_full_flow() {
         .await
         .unwrap();
     client
-        .execute(
-            "CREATE VIEW active_users AS SELECT * FROM users WHERE id > 0",
-        )
+        .execute("CREATE VIEW active_users AS SELECT * FROM users WHERE id > 0")
         .await
         .unwrap();
 
     // list_tables should return both tables and view
-    let tables = client.list_tables().await.unwrap();
+    let tables = client.list_tables("main").await.unwrap();
     assert_eq!(tables.len(), 3);
 
     let table_names: Vec<&str> = tables
@@ -563,10 +557,10 @@ async fn test_schema_views_only() {
         .await
         .unwrap();
 
-    let views = client.list_views().await.unwrap();
+    let views = client.list_views("main").await.unwrap();
     assert_eq!(views.len(), 2);
-    assert!(views.contains(&"v1".to_string()));
-    assert!(views.contains(&"v2".to_string()));
+    assert!(views.iter().any(|v| v.name == "v1"));
+    assert!(views.iter().any(|v| v.name == "v2"));
 }
 
 #[tokio::test]
@@ -603,7 +597,9 @@ async fn test_schema_default_values() {
     let client = SqlClient::connect(sqlite_memory_config()).await.unwrap();
 
     client
-        .execute("CREATE TABLE test (id INTEGER, status TEXT DEFAULT 'active', count INTEGER DEFAULT 0)")
+        .execute(
+            "CREATE TABLE test (id INTEGER, status TEXT DEFAULT 'active', count INTEGER DEFAULT 0)",
+        )
         .await
         .unwrap();
 

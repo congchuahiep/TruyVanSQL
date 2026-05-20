@@ -7,7 +7,8 @@ use crate::driver::{DatabaseDriver, SqlDialect};
 use crate::error::EngineError;
 use crate::result::{Column, QueryResult, Row as ResultRow, Value};
 use crate::schema::{
-    ColumnInfo, ForeignKeyInfo, IndexInfo, PrimaryKey, TableBrief, TableInfo, TableKind,
+    ColumnInfo, DatabaseBrief, ForeignKeyInfo, IndexInfo, PrimaryKey, SchemaBrief, SchemaKind,
+    TableBrief, TableInfo, TableKind,
 };
 use crate::{DatabaseConfig, FileDbConfig};
 
@@ -287,11 +288,14 @@ impl DatabaseDriver for SqliteDriver {
         "SQLite"
     }
 
-    async fn list_tables(&self) -> Result<Vec<TableBrief>, EngineError> {
+    async fn list_tables(&self, schema: &str) -> Result<Vec<TableBrief>, EngineError> {
+        // SQLite chỉ có 1 schema "main", nên schema param được bỏ qua
+        // Query trả về cả tables VÀ views (không phải system tables)
         let rows = sqlx::query(
             "SELECT name, type FROM sqlite_master
              WHERE type IN ('table', 'view')
-             ORDER BY type, name",
+             AND name NOT LIKE 'sqlite_%'
+             ORDER BY name",
         )
         .fetch_all(&self.pool)
         .await
@@ -301,37 +305,65 @@ impl DatabaseDriver for SqliteDriver {
             .iter()
             .filter_map(|row| {
                 let name: String = row.try_get("name").ok()?;
-                let obj_type: String = row.try_get("type").ok()?;
-
-                // Bỏ qua system tables (bắt đầu bằng sqlite_)
                 if name.starts_with("sqlite_") {
                     return None;
                 }
-
-                let kind = match obj_type.as_str() {
-                    "view" => TableKind::View,
-                    _ => TableKind::Table,
+                let kind_str: String = row.try_get("type").ok()?;
+                let kind = if kind_str == "view" {
+                    TableKind::View
+                } else {
+                    TableKind::Table
                 };
-
-                Some(TableBrief { name, kind })
+                Some(TableBrief {
+                    name,
+                    kind,
+                    schema_name: Some(schema.to_string()),
+                })
             })
             .collect();
 
         Ok(tables)
     }
 
-    async fn list_views(&self) -> Result<Vec<String>, EngineError> {
-        let rows = sqlx::query("SELECT name FROM sqlite_master WHERE type = 'view' ORDER BY name")
-            .fetch_all(&self.pool)
-            .await
-            .map_err(|e| EngineError::Schema(e.to_string()))?;
+    async fn list_views(&self, schema: &str) -> Result<Vec<TableBrief>, EngineError> {
+        // SQLite chỉ có 1 schema "main", nên schema param được bỏ qua
+        let rows = sqlx::query(
+            "SELECT name FROM sqlite_master
+             WHERE type = 'view'
+             AND name NOT LIKE 'sqlite_%'
+             ORDER BY name",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| EngineError::Schema(e.to_string()))?;
 
-        let views: Vec<String> = rows
+        let views: Vec<TableBrief> = rows
             .iter()
-            .filter_map(|row| row.try_get::<String, _>("name").ok())
+            .filter_map(|row| {
+                let name: String = row.try_get("name").ok()?;
+                if name.starts_with("sqlite_") {
+                    return None;
+                }
+                Some(TableBrief {
+                    name,
+                    kind: TableKind::View,
+                    schema_name: Some(schema.to_string()),
+                })
+            })
             .collect();
 
         Ok(views)
+    }
+
+    async fn list_databases(&self) -> Result<Vec<DatabaseBrief>, EngineError> {
+        Ok(vec![])
+    }
+
+    async fn list_schemas(&self) -> Result<Vec<SchemaBrief>, EngineError> {
+        Ok(vec![SchemaBrief {
+            name: "main".to_string(),
+            kind: SchemaKind::User,
+        }])
     }
 
     async fn get_table_info(&self, table_name: &str) -> Result<TableInfo, EngineError> {
@@ -574,7 +606,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_tables_empty() {
         let driver = create_driver().await;
-        let tables = driver.list_tables().await.unwrap();
+        let tables = driver.list_tables("main").await.unwrap();
         assert!(tables.is_empty());
     }
 
@@ -594,7 +626,7 @@ mod tests {
             .await
             .unwrap();
 
-        let tables = driver.list_tables().await.unwrap();
+        let tables = driver.list_tables("main").await.unwrap();
         assert_eq!(tables.len(), 3);
         let names: Vec<&str> = tables.iter().map(|t| t.name.as_str()).collect();
         assert!(names.contains(&"users"));
@@ -616,7 +648,7 @@ mod tests {
             .await
             .unwrap();
 
-        let tables = driver.list_tables().await.unwrap();
+        let tables = driver.list_tables("main").await.unwrap();
         assert_eq!(tables.len(), 2);
 
         let view = tables.iter().find(|t| t.kind == TableKind::View).unwrap();
@@ -640,7 +672,7 @@ mod tests {
             .await
             .unwrap();
 
-        let tables = driver.list_tables().await.unwrap();
+        let tables = driver.list_tables("main").await.unwrap();
         let names: Vec<&str> = tables.iter().map(|t| t.name.as_str()).collect();
         // sqlite_sequence nếu có thì không nên nằm trong danh sách
         assert!(!names.iter().any(|n| n.starts_with("sqlite_")));
@@ -654,7 +686,7 @@ mod tests {
             .await
             .unwrap();
 
-        let views = driver.list_views().await.unwrap();
+        let views = driver.list_views("main").await.unwrap();
         assert!(views.is_empty());
     }
 
@@ -674,10 +706,10 @@ mod tests {
             .await
             .unwrap();
 
-        let views = driver.list_views().await.unwrap();
+        let views = driver.list_views("main").await.unwrap();
         assert_eq!(views.len(), 2);
-        assert!(views.contains(&"active_users".to_string()));
-        assert!(views.contains(&"user_names".to_string()));
+        assert!(views.iter().any(|v| v.name == "active_users"));
+        assert!(views.iter().any(|v| v.name == "user_names"));
     }
 
     #[tokio::test]
