@@ -1,7 +1,5 @@
-use engine::{DatabaseConfig, SqlClient};
+use engine::{DatabaseConfig, DatabaseKind, SqlClient};
 use gpui::*;
-
-use crate::shared::LoadState;
 
 use super::{DatabaseNode, SchemaNode};
 
@@ -32,13 +30,28 @@ impl ConnectionStatus {
     }
 }
 
+/// Phần tử con trực tiếp của một kết nối trong cây sidebar.
+#[derive(Debug)]
+pub enum ConnectionChildren {
+    /// Postgres/MySQL — có database → schema → table
+    Databases(Vec<Entity<DatabaseNode>>),
+    /// SQLite — không có database, chỉ có schema → table
+    Schemas(Vec<Entity<SchemaNode>>),
+}
+
+impl Default for ConnectionChildren {
+    fn default() -> Self {
+        Self::Schemas(vec![])
+    }
+}
+
 /// Đại diện cho một kết nối đến cơ sở dữ liệu, bao gồm tên, cấu hình, trạng thái và danh sách
 /// các cơ sở dữ liệu.
 pub struct DatabaseConnection {
     pub name: SharedString,
     pub config: DatabaseConfig,
     pub status: ConnectionStatus,
-    pub databases: Vec<Entity<DatabaseNode>>,
+    pub children: ConnectionChildren,
     pub client: Option<SqlClient>,
 }
 
@@ -48,7 +61,7 @@ impl DatabaseConnection {
             name,
             config,
             status: ConnectionStatus::Disconnected,
-            databases: Vec::new(),
+            children: ConnectionChildren::default(),
             client: None,
         }
     }
@@ -65,23 +78,12 @@ impl DatabaseConnection {
         cx.spawn(
             async move |this, cx| match SqlClient::connect(config).await {
                 Ok(client) => {
-                    let databases = client.list_databases().await.unwrap_or_default();
-
                     this.update(cx, |this, cx| {
                         this.client = Some(client.clone());
-
-                        let db_entities: Vec<Entity<DatabaseNode>> = databases
-                            .into_iter()
-                            .map(|db| {
-                                let entity = cx.new(|_| DatabaseNode::new(db, client.clone()));
-                                cx.observe(&entity, |_, _, cx| cx.notify()).detach();
-                                entity
-                            })
-                            .collect();
-
-                        this.databases = db_entities;
                         this.status = ConnectionStatus::Online;
                         cx.notify();
+
+                        this.load_children(cx);
                     })
                     .ok();
                 }
@@ -97,85 +99,82 @@ impl DatabaseConnection {
         .detach();
     }
 
-    pub fn switch_database(&mut self, db_name: &str, cx: &mut Context<Self>) {
-        let mut config = self.config.clone();
-        let db_name_owned = db_name.to_string();
-        config.set_database(&db_name_owned);
-
-        self.status = ConnectionStatus::Connecting;
-        self.databases.clear();
-        cx.notify();
-
-        let config_clone = config.clone();
-        let db_name_for_async = db_name_owned;
-        cx.spawn(
-            async move |this, cx| match SqlClient::connect(config_clone).await {
-                Ok(client) => {
-                    let databases = client.list_databases().await.unwrap_or_default();
-
-                    this.update(cx, |this, cx| {
-                        this.client = Some(client.clone());
-                        this.config.set_database(&db_name_for_async);
-
-                        let db_entities: Vec<Entity<DatabaseNode>> = databases
-                            .into_iter()
-                            .map(|db| {
-                                let entity = cx.new(|_| DatabaseNode::new(db, client.clone()));
-                                cx.observe(&entity, |_, _, cx| cx.notify()).detach();
-                                entity
-                            })
-                            .collect();
-
-                        this.databases = db_entities;
-                        this.status = ConnectionStatus::Online;
-                        cx.notify();
-                    })
-                    .ok();
-                }
-                Err(e) => {
-                    this.update(cx, |this, cx| {
-                        this.status = ConnectionStatus::Error(e.to_string());
-                        cx.notify();
-                    })
-                    .ok();
-                }
-            },
-        )
-        .detach();
+    pub fn switch_database(&mut self, _db_name: &str, _cx: &mut Context<Self>) {
+        todo!("Cần triển khai phương thức này")
     }
 
     pub fn refresh_databases(&mut self, cx: &mut Context<Self>) {
-        let client = if let Some(c) = &self.client {
-            c.clone()
-        } else {
-            return;
-        };
-
-        cx.spawn(async move |this, cx| {
-            let databases = client.list_databases().await.unwrap_or_default();
-
-            this.update(cx, |this, cx| {
-                let db_entities: Vec<Entity<DatabaseNode>> = databases
-                    .into_iter()
-                    .map(|db| {
-                        let entity = cx.new(|_| DatabaseNode::new(db, client.clone()));
-                        cx.observe(&entity, |_, _, cx| cx.notify()).detach();
-                        entity
-                    })
-                    .collect();
-
-                this.databases = db_entities;
-                cx.notify();
-            })
-            .ok();
-        })
-        .detach();
+        self.load_children(cx);
     }
 
     pub fn disconnect(&mut self, cx: &mut Context<Self>) {
         self.client = None;
         self.status = ConnectionStatus::Disconnected;
-        self.databases.clear();
+        self.children = ConnectionChildren::default();
         cx.notify();
+    }
+
+    /// Tải danh sách children (databases hoặc schemas) tùy loại DB.
+    /// Được gọi từ connect() và refresh_databases().
+    fn load_children(&mut self, cx: &mut Context<Self>) {
+        let Some(client) = self.client.clone() else {
+            return;
+        };
+
+        let kind = self.config.kind();
+        cx.spawn(async move |this, cx| match kind {
+            DatabaseKind::Sqlite => {
+                let result = client.list_schemas().await;
+                this.update(cx, |this, cx| {
+                    match result {
+                        Ok(schemas) => {
+                            let children = schemas
+                                .into_iter()
+                                .map(|schema| {
+                                    let entity = cx.new(|_| {
+                                        SchemaNode::new(schema, client.clone(), "main".to_string())
+                                    });
+                                    cx.observe(&entity, |_, _, cx| cx.notify()).detach();
+                                    entity
+                                })
+                                .collect();
+                            this.children = ConnectionChildren::Schemas(children);
+                        }
+                        Err(e) => {
+                            this.status =
+                                ConnectionStatus::Error(format!("Không thể tải schemas: {e}"));
+                        }
+                    }
+                    cx.notify();
+                })
+                .ok();
+            }
+            _ => {
+                let result = client.list_databases().await;
+
+                this.update(cx, |this, cx| {
+                    match result {
+                        Ok(databases) => {
+                            let children = databases
+                                .into_iter()
+                                .map(|db| {
+                                    let entity = cx.new(|_| DatabaseNode::new(db, client.clone()));
+                                    cx.observe(&entity, |_, _, cx| cx.notify()).detach();
+                                    entity
+                                })
+                                .collect();
+                            this.children = ConnectionChildren::Databases(children);
+                        }
+                        Err(e) => {
+                            this.status =
+                                ConnectionStatus::Error(format!("Không thể tải databases: {e}"));
+                        }
+                    }
+                    cx.notify();
+                })
+                .ok();
+            }
+        })
+        .detach();
     }
 }

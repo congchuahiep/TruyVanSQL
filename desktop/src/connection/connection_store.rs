@@ -1,5 +1,5 @@
 use crate::connection::database_connection::DatabaseConnection;
-use engine::{DatabaseConfig, SqlClient};
+use engine::DatabaseConfig;
 use gpui::*;
 
 pub struct ConnectionStore {

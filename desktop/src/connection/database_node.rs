@@ -1,11 +1,7 @@
-use assets::AppIcon;
 use engine::{DatabaseBrief, SqlClient};
 use gpui::*;
 
-use crate::component::sidebar_menu_item::SidebarMenuItem;
-use crate::connection::{DatabaseConnection, SchemaNode};
-use crate::panel::TabManager;
-use crate::shared::LoadState;
+use crate::{connection::SchemaNode, shared::LoadState};
 
 /// Đại diện cho một node cơ sở dữ liệu trong cây hiển thị.
 /// Chứa thông tin về database và danh sách các schema bên trong.
@@ -72,52 +68,5 @@ impl DatabaseNode {
             .ok();
         })
         .detach();
-    }
-
-    /// Render thành SidebarMenuItem cho Explorer sidebar.
-    pub fn render_item(
-        &self,
-        db_entity: Entity<Self>,
-        tab_manager: Entity<TabManager>,
-        conn_entity: Entity<DatabaseConnection>,
-        cx: &App,
-    ) -> SidebarMenuItem {
-        let db_name = self.database.name.clone();
-        let schemas_loading = self.schemas_state.is_loading();
-        let schemas = if let Some(schemas) = self.schemas_state.as_loaded() {
-            schemas.clone()
-        } else {
-            Vec::new()
-        };
-
-        let mut item = SidebarMenuItem::new(&db_name)
-            .icon(AppIcon::Database)
-            .double_click_to_expand(true)
-            .loading(schemas_loading)
-            .on_expand({
-                let db_entity = db_entity.clone();
-                move |_window, cx| {
-                    db_entity.update(cx, |db, cx| {
-                        db.load_schemas(cx);
-                    });
-                }
-            });
-
-        if !schemas.is_empty() {
-            let schema_items: Vec<SidebarMenuItem> = schemas
-                .iter()
-                .map(|schema_entity| {
-                    schema_entity.read(cx).render_item(
-                        schema_entity.clone(),
-                        tab_manager.clone(),
-                        conn_entity.clone(),
-                        cx,
-                    )
-                })
-                .collect();
-            item = item.children(schema_items);
-        }
-
-        item
     }
 }

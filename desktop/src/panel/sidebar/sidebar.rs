@@ -7,8 +7,7 @@ use gpui_component::sidebar::Sidebar;
 
 use crate::action::sidebar::RefreshDatabase;
 use crate::component::sidebar_menu_item::SidebarMenuItem;
-use crate::connection::ConnectionStore;
-use crate::connection::{ConnectionStatus, DatabaseConnection};
+use crate::connection::{ConnectionChildren, ConnectionStore, DatabaseConnection};
 use crate::panel::TabManager;
 
 pub struct Explorer {
@@ -83,9 +82,7 @@ fn render_connection_item(
             let cloned_conn = conn_entity.clone();
             move |_window, cx| {
                 cloned_conn.update(cx, |c, cx| {
-                    if c.databases.is_empty() && c.status == ConnectionStatus::Online {
-                        c.refresh_databases(cx);
-                    }
+                    c.refresh_databases(cx);
                 });
             }
         })
@@ -102,24 +99,35 @@ fn render_connection_item(
         })
         .context_menu(|popup, _, _| popup.menu("Refresh database", Box::new(RefreshDatabase)));
 
-    let db_entities = conn.databases.clone();
-    let _ = conn;
-
-    if !db_entities.is_empty() {
-        let db_items: Vec<SidebarMenuItem> = db_entities
-            .iter()
-            .map(|db_entity| {
-                let tab_manager_clone = tab_manager.clone();
-                let conn_entity_clone = conn_entity.clone();
-                db_entity.read(cx).render_item(
-                    db_entity.clone(),
-                    tab_manager_clone,
-                    conn_entity_clone,
-                    cx,
-                )
-            })
-            .collect();
-        item = item.children(db_items);
+    match &conn.children {
+        ConnectionChildren::Databases(db_entities) => {
+            let db_items: Vec<SidebarMenuItem> = db_entities
+                .iter()
+                .map(|db_entity| {
+                    db_entity.read(cx).render_item(
+                        db_entity.clone(),
+                        tab_manager.clone(),
+                        conn_entity.clone(),
+                        cx,
+                    )
+                })
+                .collect();
+            item = item.children(db_items);
+        }
+        ConnectionChildren::Schemas(schema_entities) => {
+            let schema_items: Vec<SidebarMenuItem> = schema_entities
+                .iter()
+                .map(|schema_entity| {
+                    schema_entity.read(cx).render_item(
+                        schema_entity.clone(),
+                        tab_manager.clone(),
+                        conn_entity.clone(),
+                        cx,
+                    )
+                })
+                .collect();
+            item = item.children(schema_items);
+        }
     }
 
     item

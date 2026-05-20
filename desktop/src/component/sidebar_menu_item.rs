@@ -5,7 +5,7 @@ use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, ClickEvent, ElementId, InteractiveElement as _, IntoElement,
     ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled, Window, div,
-    percentage, px,
+    percentage,
 };
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::menu::{ContextMenuExt, PopupMenu};
@@ -344,8 +344,7 @@ impl SidebarItem for SidebarMenuItem {
                         .id("submenu")
                         .border_l_1()
                         .border_color(cx.theme().sidebar_border)
-                        .ml_3()
-                        // .pl_2()
+                        .ml(gpui::px(13.))
                         .children(self.children.into_iter().enumerate().map(|(ix, item)| {
                             let child_id = format!("{}-{}", id, ix);
                             item.render(child_id, window, cx).into_any_element()

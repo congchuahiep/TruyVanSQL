@@ -5,7 +5,6 @@ use engine::ConnectionCategory;
 use engine::{DatabaseConfig, DatabaseKind, SqlClient};
 use gpui::prelude::*;
 use gpui::*;
-use gpui_component::alert::Alert;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::form::{field, h_form};
 use gpui_component::input::{Input, InputEvent, InputState};
@@ -89,10 +88,7 @@ impl ConnectionWindow {
                 .placeholder("Mật khẩu")
                 .masked(true)
         });
-        let database_input = cx.new(|cx| {
-            InputState::new(window, cx)
-                .placeholder("postgres")
-        });
+        let database_input = cx.new(|cx| InputState::new(window, cx).placeholder("postgres"));
 
         let mut this = Self {
             is_testing: false,
