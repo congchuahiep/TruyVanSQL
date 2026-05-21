@@ -114,7 +114,7 @@ impl DatabaseConfig {
                 config.network.database = database.to_string();
                 Some(Self::Network(config))
             }
-            Self::Sqlite(c) => None,
+            Self::Sqlite(_) => None,
         }
     }
 

@@ -13,6 +13,24 @@ use crate::error::EngineError;
 /// - Kiểm tra kết nối (qua [`SqlClient::ping`])
 /// - Khám phá schema (qua [`SqlClient::list_tables`], [`SqlClient::get_table_info`])
 ///
+/// # Clone Performance
+///
+/// `SqlClient` is cheap to clone. Internally it holds an `Arc<dyn DatabaseDriver>`,
+/// so `.clone()` only increments an atomic reference count (~1ns). The underlying
+/// database connection, socket, and driver state are **shared**, not duplicated.
+///
+/// ```text
+/// let client1 = SqlClient::connect(config).await?;  // 1-10ms (real I/O)
+/// let client2 = client1.clone();                    // ~1ns (Arc clone)
+/// let client3 = client1.clone();                    // ~1ns (Arc clone)
+/// // all three share the same underlying connection pool
+/// ```
+///
+/// This design is intentional, allows `SqlClient` to be passed freely across
+/// async tasks, entity observers, and component boundaries without ownership hassle.
+/// Creating a *new* connection via `connect()` is expensive (TCP handshake, auth);
+/// cloning an *existing* `SqlClient` is essentially free.
+///
 /// # Ví dụ
 ///
 /// ```ignore

@@ -1,4 +1,4 @@
-use engine::{DatabaseBrief, DatabaseConfig, EngineError, SqlClient};
+use engine::{DatabaseBrief, DatabaseConfig, SqlClient};
 use gpui::*;
 
 use crate::{connection::SchemaNode, shared::LoadState};

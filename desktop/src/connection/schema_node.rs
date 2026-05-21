@@ -10,7 +10,7 @@ pub struct SchemaNode {
     pub schema: SchemaBrief,
     pub tables_state: LoadState<Vec<TableBrief>>,
     pub views_state: LoadState<Vec<TableBrief>>,
-    client: SqlClient,
+    pub client: SqlClient,
     db_name: String,
 }
 

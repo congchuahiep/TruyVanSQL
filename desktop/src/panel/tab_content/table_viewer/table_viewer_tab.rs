@@ -1,54 +1,45 @@
 use assets::AppIcon;
-use engine::QueryResult;
+use engine::{QueryResult, SqlClient};
 use gpui::*;
 use gpui_component::v_flex;
 use std::any::Any;
 
-use crate::connection::DatabaseConnection;
 use crate::panel::{TabInfo, TabItem};
 use crate::shared::smart_data_grid::SmartDataGrid;
 
 /// Tab chuyên dụng để hiển thị toàn màn hình DataGrid (Table Viewer)
 pub struct TableViewerTab {
     table_name: String,
-    #[allow(dead_code)]
-    connection: Entity<DatabaseConnection>,
+    client: SqlClient,
     grid: Entity<SmartDataGrid>,
 }
 
 impl TableViewerTab {
     pub fn new(
-        connection: Entity<DatabaseConnection>,
+        client: SqlClient,
         table_name: String,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let grid = cx.new(|cx| SmartDataGrid::new(connection.clone(), window, cx));
+        let grid = cx.new(|cx| SmartDataGrid::new(client.clone(), window, cx));
 
         let tab = Self {
             table_name: table_name.clone(),
-            connection: connection.clone(),
+            client: client.clone(),
             grid,
         };
 
-        tab.load_data(table_name, connection, tab.grid.clone(), cx);
+        tab.load_data(table_name, tab.grid.clone(), cx);
         tab
     }
 
     fn load_data(
         &self,
         table_name: String,
-        connection: Entity<DatabaseConnection>,
         grid_entity: Entity<SmartDataGrid>,
         cx: &mut Context<Self>,
     ) {
-        let conn = connection.read(cx);
-        let client = if let Some(c) = &conn.client {
-            c.clone()
-        } else {
-            return;
-        };
-
+        let client = self.client.clone();
         let query = format!("SELECT * FROM \"{}\" LIMIT 1000", table_name);
 
         cx.spawn(async move |_, cx| {

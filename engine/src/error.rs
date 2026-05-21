@@ -12,19 +12,11 @@ pub enum EngineError {
     #[error("Lỗi kết nối: {0}")]
     Connection(String),
 
-    /// Timeout khi thực thi query hoặc kết nối.
-    #[error("Timeout: {0}")]
-    Timeout(String),
-
     /// Lỗi khi thực thi SQL query.
     ///
     /// Bao gồm: syntax error, constraint violation, permission denied, etc.
     #[error("Lỗi thực thi truy vấn: {0}")]
     QueryExecution(String),
-
-    /// Không tìm thấy resource (table, database, schema).
-    #[error("Không tìm thấy: {0}")]
-    NotFound(String),
 
     /// Lỗi khi truy vấn schema metadata.
     ///
