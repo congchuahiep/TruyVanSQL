@@ -155,21 +155,10 @@ impl DatabaseConnection {
                 this.update(cx, |this, cx| {
                     match result {
                         Ok(databases) => {
-                            let primary_db = this.config.database_name();
                             let children = databases
                                 .into_iter()
                                 .map(|db| {
-                                    let node_client =
-                                        (db.name == primary_db).then(|| client.clone());
-
-                                    let db_config = this
-                                        .config
-                                        .with_database(&db.name)
-                                        .expect("Network DB luôn có with_database()");
-
-                                    let entity =
-                                        cx.new(|_| DatabaseNode::new(db, node_client, db_config));
-
+                                    let entity = cx.new(|_| DatabaseNode::new(db, client.clone()));
                                     cx.observe(&entity, |_, _, cx| cx.notify()).detach();
                                     entity
                                 })
