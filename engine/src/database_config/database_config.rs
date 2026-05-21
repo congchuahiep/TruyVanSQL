@@ -85,6 +85,20 @@ impl DatabaseConfig {
         }
     }
 
+    /// Tạo config mới với database name khác.
+    /// Chỉ áp dụng cho Network (Postgres/MySQL).
+    /// SQLite trả về None (không có khái niệm multi-database).
+    pub fn with_database(&self, database: &str) -> Option<Self> {
+        match self {
+            Self::Network(c) => {
+                let mut config = c.clone();
+                config.network.database = database.to_string();
+                Some(Self::Network(config))
+            }
+            Self::Sqlite(_) => None,
+        }
+    }
+
     /// Đặt thời gian chờ khi lấy connection (giây).
     pub fn set_acquire_timeout_secs(&mut self, secs: u64) {
         match self {

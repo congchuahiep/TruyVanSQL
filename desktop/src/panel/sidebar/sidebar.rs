@@ -104,12 +104,9 @@ fn render_connection_item(
             let db_items: Vec<SidebarMenuItem> = db_entities
                 .iter()
                 .map(|db_entity| {
-                    db_entity.read(cx).render_item(
-                        db_entity.clone(),
-                        tab_manager.clone(),
-                        conn_entity.clone(),
-                        cx,
-                    )
+                    db_entity
+                        .read(cx)
+                        .render_item(db_entity.clone(), tab_manager.clone(), cx)
                 })
                 .collect();
             item = item.children(db_items);
@@ -121,7 +118,6 @@ fn render_connection_item(
                     schema_entity.read(cx).render_item(
                         schema_entity.clone(),
                         tab_manager.clone(),
-                        conn_entity.clone(),
                         cx,
                     )
                 })

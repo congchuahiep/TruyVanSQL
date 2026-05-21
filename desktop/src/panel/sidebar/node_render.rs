@@ -1,5 +1,5 @@
 use crate::component::sidebar_menu_item::SidebarMenuItem;
-use crate::connection::{DatabaseConnection, DatabaseNode, SchemaNode};
+use crate::connection::{DatabaseNode, SchemaNode};
 use crate::panel::{TabManager, TableViewerTab};
 use assets::AppIcon;
 use gpui::*;
@@ -10,7 +10,6 @@ impl DatabaseNode {
         &self,
         db_entity: Entity<Self>,
         tab_manager: Entity<TabManager>,
-        conn_entity: Entity<DatabaseConnection>,
         cx: &App,
     ) -> SidebarMenuItem {
         let db_name = self.database.name.clone();
@@ -41,7 +40,6 @@ impl DatabaseNode {
                     schema_entity.read(cx).render_item(
                         schema_entity.clone(),
                         tab_manager.clone(),
-                        conn_entity.clone(),
                         cx,
                     )
                 })
@@ -59,7 +57,6 @@ impl SchemaNode {
         &self,
         schema_entity: Entity<Self>,
         tab_manager: Entity<TabManager>,
-        conn_entity: Entity<DatabaseConnection>,
         _cx: &App,
     ) -> SidebarMenuItem {
         let schema_name = self.schema.name.clone();
@@ -96,7 +93,7 @@ impl SchemaNode {
                 .map(|table| {
                     let table_name = table.name.clone();
                     let tab_manager_for_click = tab_manager.clone();
-                    let conn_entity_for_tab = conn_entity.clone();
+                    let client_for_tab = self.client.clone();
                     SidebarMenuItem::new(&table_name)
                         .icon(AppIcon::Table)
                         .indented(true)
@@ -104,7 +101,7 @@ impl SchemaNode {
                         .on_double_click(move |_, window, cx| {
                             let tab = cx.new(|cx| {
                                 TableViewerTab::new(
-                                    conn_entity_for_tab.clone(),
+                                    client_for_tab.clone(),
                                     table_name.clone(),
                                     window,
                                     cx,
@@ -125,7 +122,7 @@ impl SchemaNode {
                 .map(|view| {
                     let view_name = view.name.clone();
                     let tab_manager_for_click = tab_manager.clone();
-                    let conn_entity_for_tab = conn_entity.clone();
+                    let client_for_tab = self.client.clone();
                     SidebarMenuItem::new(&view_name)
                         .icon(AppIcon::Table)
                         .indented(true)
@@ -133,7 +130,7 @@ impl SchemaNode {
                         .on_double_click(move |_, window, cx| {
                             let tab = cx.new(|cx| {
                                 TableViewerTab::new(
-                                    conn_entity_for_tab.clone(),
+                                    client_for_tab.clone(),
                                     view_name.clone(),
                                     window,
                                     cx,
