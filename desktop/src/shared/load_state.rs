@@ -1,3 +1,5 @@
+use engine::EngineError;
+
 /// Trạng thái của một async fetch.
 ///
 /// Flow: Idle → Loading → Loaded(T)
@@ -10,7 +12,7 @@ pub enum LoadState<T> {
     /// Dữ liệu đã được fetch và lưu trữ
     Loaded(T),
     /// Fetch thất bại
-    Error(LoadError),
+    Error(EngineError),
 }
 
 impl<T> LoadState<T> {
@@ -44,38 +46,10 @@ impl<T> LoadState<T> {
         }
     }
 
-    pub fn as_error(&self) -> Option<&LoadError> {
+    pub fn as_error(&self) -> Option<&EngineError> {
         match self {
             LoadState::Error(err) => Some(err),
             _ => None,
-        }
-    }
-}
-
-/// Lỗi khi fetch dữ liệu async
-#[derive(Debug, Clone, PartialEq)]
-pub enum LoadError {
-    /// Không kết nối được đến database
-    Connection(String),
-    /// Timeout
-    Timeout(String),
-    /// Lỗi query/SQL
-    Query(String),
-    /// Không tìm thấy resource
-    NotFound(String),
-    /// Lỗi không xác định
-    Unknown(String),
-}
-
-impl LoadError {
-    /// Hiển thị message cho user
-    pub fn message(&self) -> &str {
-        match self {
-            LoadError::Connection(msg)
-            | LoadError::Timeout(msg)
-            | LoadError::Query(msg)
-            | LoadError::NotFound(msg)
-            | LoadError::Unknown(msg) => msg,
         }
     }
 }
