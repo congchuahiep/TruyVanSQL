@@ -53,6 +53,25 @@ impl DatabaseConfig {
         })
     }
 
+    /// Tên database hiện tại (dùng cho UI/fallback).
+    pub fn database_name(&self) -> String {
+        match self {
+            Self::Sqlite(c) => {
+                if c.url.contains(":memory:") {
+                    "main".to_string()
+                } else {
+                    let path = c.url.strip_prefix("sqlite:").unwrap_or(&c.url);
+                    std::path::Path::new(path)
+                        .file_name()
+                        .and_then(|f| f.to_str())
+                        .unwrap_or("main")
+                        .to_string()
+                }
+            }
+            Self::Network(c) => c.network.database.clone(),
+        }
+    }
+
     /// Trả về loại database.
     pub fn kind(&self) -> DatabaseKind {
         match self {
@@ -114,6 +133,14 @@ impl DatabaseConfig {
     pub fn set_database(&mut self, database: &str) {
         if let Self::Network(c) = self {
             c.network.database = database.to_string();
+        }
+    }
+
+    /// Đặt số lượng connection tối đa trong pool.
+    pub fn set_max_connections(&mut self, max: u32) {
+        match self {
+            Self::Sqlite(c) => c.max_connections = max,
+            Self::Network(c) => c.max_connections = max,
         }
     }
 }
