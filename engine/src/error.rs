@@ -4,11 +4,11 @@ use thiserror::Error;
 ///
 /// Mọi operation trong engine đều trả về `Result<T, EngineError>`.
 /// Các variant phân loại lỗi theo tầng xử lý, giúp caller xử lý phù hợp.
-#[derive(Error, Debug, Clone)]
+#[derive(Error, Debug)]
 pub enum EngineError {
     /// Lỗi khi thiết lập hoặc duy trì kết nối database.
     ///
-    /// Bao gồm: connection refused, authentication failed, etc.
+    /// Bao gồm: connection refused, timeout, authentication failed, etc.
     #[error("Lỗi kết nối: {0}")]
     Connection(String),
 

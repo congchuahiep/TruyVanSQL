@@ -9,8 +9,7 @@ use crate::{connection::SchemaNode, shared::LoadState};
 pub struct DatabaseNode {
     pub database: DatabaseBrief,
     pub schemas_state: LoadState<Vec<Entity<SchemaNode>>>,
-    client: Option<SqlClient>,
-    db_config: DatabaseConfig,
+    client: SqlClient,
 }
 
 impl std::fmt::Debug for DatabaseNode {
@@ -24,16 +23,11 @@ impl std::fmt::Debug for DatabaseNode {
 
 impl DatabaseNode {
     /// Tạo DatabaseNode mới với engine types.
-    pub fn new(
-        database: DatabaseBrief,
-        client: Option<SqlClient>,
-        db_config: DatabaseConfig,
-    ) -> Self {
+    pub fn new(database: DatabaseBrief, client: SqlClient) -> Self {
         Self {
             database,
             schemas_state: LoadState::Idle,
             client,
-            db_config,
         }
     }
 
@@ -52,34 +46,13 @@ impl DatabaseNode {
         cx.notify();
 
         let client = self.client.clone();
-        let db_config = self.db_config.clone();
         let db_name = self.database.name.clone();
 
         cx.spawn(async move |this, cx| {
-            // Lấy và conncect SqlClient
-            let client = match client {
-                Some(c) => c,
-                None => match SqlClient::connect(db_config).await {
-                    Ok(c) => {
-                        this.update(cx, |this, _| this.client = Some(c.clone()))
-                            .ok();
-                        c
-                    }
-                    Err(e) => {
-                        this.update(cx, |this, cx| {
-                            this.schemas_state = LoadState::Error(e);
-                            cx.notify();
-                        })
-                        .ok();
-                        return;
-                    }
-                },
-            };
-
-            // Lấy danh sách các schema từ client
             let schemas = client.list_schemas().await.unwrap_or_default();
+
             this.update(cx, |this, cx| {
-                let entities: Vec<Entity<SchemaNode>> = schemas
+                let schema_entities: Vec<Entity<SchemaNode>> = schemas
                     .into_iter()
                     .map(|schema| {
                         let entity =
@@ -88,7 +61,8 @@ impl DatabaseNode {
                         entity
                     })
                     .collect();
-                this.schemas_state = LoadState::Loaded(entities);
+
+                this.schemas_state = LoadState::Loaded(schema_entities);
                 cx.notify();
             })
             .ok();
