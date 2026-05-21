@@ -53,25 +53,6 @@ impl DatabaseConfig {
         })
     }
 
-    /// Tên database hiện tại (dùng cho UI/fallback).
-    pub fn database_name(&self) -> String {
-        match self {
-            Self::Sqlite(c) => {
-                if c.url.contains(":memory:") {
-                    "main".to_string()
-                } else {
-                    let path = c.url.strip_prefix("sqlite:").unwrap_or(&c.url);
-                    std::path::Path::new(path)
-                        .file_name()
-                        .and_then(|f| f.to_str())
-                        .unwrap_or("main")
-                        .to_string()
-                }
-            }
-            Self::Network(c) => c.network.database.clone(),
-        }
-    }
-
     /// Trả về loại database.
     pub fn kind(&self) -> DatabaseKind {
         match self {
@@ -104,20 +85,6 @@ impl DatabaseConfig {
         }
     }
 
-    /// Tạo config mới với database name khác.
-    /// Chỉ áp dụng cho Network (Postgres/MySQL).
-    /// SQLite trả về None (không có khái niệm multi-database).
-    pub fn with_database(&self, database: &str) -> Option<Self> {
-        match self {
-            Self::Network(c) => {
-                let mut config = c.clone();
-                config.network.database = database.to_string();
-                Some(Self::Network(config))
-            }
-            Self::Sqlite(c) => None,
-        }
-    }
-
     /// Đặt thời gian chờ khi lấy connection (giây).
     pub fn set_acquire_timeout_secs(&mut self, secs: u64) {
         match self {
@@ -133,14 +100,6 @@ impl DatabaseConfig {
     pub fn set_database(&mut self, database: &str) {
         if let Self::Network(c) = self {
             c.network.database = database.to_string();
-        }
-    }
-
-    /// Đặt số lượng connection tối đa trong pool.
-    pub fn set_max_connections(&mut self, max: u32) {
-        match self {
-            Self::Sqlite(c) => c.max_connections = max,
-            Self::Network(c) => c.max_connections = max,
         }
     }
 }

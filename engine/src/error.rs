@@ -4,27 +4,19 @@ use thiserror::Error;
 ///
 /// Mọi operation trong engine đều trả về `Result<T, EngineError>`.
 /// Các variant phân loại lỗi theo tầng xử lý, giúp caller xử lý phù hợp.
-#[derive(Error, Debug, Clone)]
+#[derive(Error, Debug)]
 pub enum EngineError {
     /// Lỗi khi thiết lập hoặc duy trì kết nối database.
     ///
-    /// Bao gồm: connection refused, authentication failed, etc.
+    /// Bao gồm: connection refused, timeout, authentication failed, etc.
     #[error("Lỗi kết nối: {0}")]
     Connection(String),
-
-    /// Timeout khi thực thi query hoặc kết nối.
-    #[error("Timeout: {0}")]
-    Timeout(String),
 
     /// Lỗi khi thực thi SQL query.
     ///
     /// Bao gồm: syntax error, constraint violation, permission denied, etc.
     #[error("Lỗi thực thi truy vấn: {0}")]
     QueryExecution(String),
-
-    /// Không tìm thấy resource (table, database, schema).
-    #[error("Không tìm thấy: {0}")]
-    NotFound(String),
 
     /// Lỗi khi truy vấn schema metadata.
     ///
