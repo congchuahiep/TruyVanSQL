@@ -91,7 +91,7 @@ impl SchemaNode {
             let table_items: Vec<SidebarMenuItem> = tables
                 .iter()
                 .map(|table| {
-                    let table_name = table.name.clone();
+                    let table_name: SharedString = table.name.clone().into();
                     let tab_manager_for_click = tab_manager.clone();
                     let client_for_tab = self.client.clone();
                     SidebarMenuItem::new(&table_name)
@@ -120,7 +120,7 @@ impl SchemaNode {
             let view_items: Vec<SidebarMenuItem> = views
                 .iter()
                 .map(|view| {
-                    let view_name = view.name.clone();
+                    let view_name: SharedString = view.name.clone().into();
                     let tab_manager_for_click = tab_manager.clone();
                     let client_for_tab = self.client.clone();
                     SidebarMenuItem::new(&view_name)

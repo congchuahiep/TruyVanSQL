@@ -9,7 +9,7 @@ use crate::shared::smart_data_grid::SmartDataGrid;
 
 /// Tab chuyên dụng để hiển thị toàn màn hình DataGrid (Table Viewer)
 pub struct TableViewerTab {
-    table_name: String,
+    table_name: SharedString,
     client: SqlClient,
     grid: Entity<SmartDataGrid>,
 }
@@ -17,30 +17,34 @@ pub struct TableViewerTab {
 impl TableViewerTab {
     pub fn new(
         client: SqlClient,
-        table_name: String,
+        table_name: impl Into<SharedString>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
         let grid = cx.new(|cx| SmartDataGrid::new(client.clone(), window, cx));
 
         let tab = Self {
-            table_name: table_name.clone(),
+            table_name: table_name.into(),
             client: client.clone(),
             grid,
         };
 
-        tab.load_data(table_name, tab.grid.clone(), cx);
+        tab.load_data(cx);
         tab
     }
 
-    fn load_data(
-        &self,
-        table_name: String,
-        grid_entity: Entity<SmartDataGrid>,
-        cx: &mut Context<Self>,
-    ) {
+    fn load_data(&self, cx: &mut Context<Self>) {
+        let table_name = self.table_name.clone();
+        let grid_entity = self.grid.clone();
         let client = self.client.clone();
         let query = format!("SELECT * FROM \"{}\" LIMIT 1000", table_name);
+
+        grid_entity.update(cx, |grid, cx| {
+            grid.table.update(cx, |table, cx| {
+                table.delegate_mut().state.is_loading = true;
+                cx.notify();
+            });
+        });
 
         cx.spawn(async move |_, cx| {
             let mut pks = Vec::new();
@@ -52,6 +56,7 @@ impl TableViewerTab {
 
             grid_entity.update(cx, |grid, cx| {
                 if let Ok(QueryResult::Query { columns, rows }) = result {
+                    println!("Columns: {:?}, Rows: {}", columns, rows.len());
                     grid.set_data(columns, rows, cx);
                     grid.set_metadata(Some(table_name.clone()), pks, cx);
                 } else if let Err(e) = result {

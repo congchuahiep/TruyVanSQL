@@ -14,7 +14,7 @@ pub struct GridState {
     pub columns: Vec<Column>,
     pub original_rows: Vec<Vec<SharedString>>,
 
-    pub source_table: Option<String>,
+    pub source_table: Option<SharedString>,
     pub primary_keys: Vec<String>,
 
     pub pending_edits: HashMap<(usize, usize), String>,

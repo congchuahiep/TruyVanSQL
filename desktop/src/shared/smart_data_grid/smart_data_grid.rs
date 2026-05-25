@@ -225,7 +225,7 @@ impl SmartDataGrid {
     /// Cấu hình siêu dữ liệu để Grid biết nó có thể Edit được không
     pub fn set_metadata(
         &mut self,
-        source_table: Option<String>,
+        source_table: Option<SharedString>,
         primary_keys: Vec<String>,
         cx: &mut Context<Self>,
     ) {

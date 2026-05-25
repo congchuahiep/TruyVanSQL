@@ -121,6 +121,14 @@ impl TableDelegate for GridDelegate {
         }
     }
 
+    fn render_empty(
+        &mut self,
+        _window: &mut Window,
+        _cx: &mut Context<TableState<Self>>,
+    ) -> impl IntoElement {
+        div().into_any_element()
+    }
+
     fn cell_text(&self, row_ix: usize, col_ix: usize, _: &App) -> String {
         if let Some(new_val) = self.state.pending_edits.get(&(row_ix, col_ix)) {
             return new_val.clone();

@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
-use sqlx::{Column as SqlxColumn, Row, TypeInfo};
+use sqlx::{Column as SqlxColumn, Executor, Row, Statement, TypeInfo};
 
 use crate::driver::{DatabaseDriver, SqlDialect};
 use crate::error::EngineError;
@@ -59,21 +59,32 @@ impl SqliteDriver {
             .await
             .map_err(|e| EngineError::QueryExecution(e.to_string()))?;
 
-        if rows.is_empty() {
-            return Ok(QueryResult::Query {
-                columns: vec![],
-                rows: vec![],
-            });
-        }
+        let columns: Vec<Column> = if let Some(first_row) = rows.first() {
+            first_row
+                .columns()
+                .iter()
+                .map(|col| Column {
+                    name: col.name().to_string(),
+                    declared_type: Some(col.type_info().name().to_string()),
+                })
+                .collect()
+        } else {
+            let result = self
+                .pool
+                .prepare(query)
+                .await
+                .map_err(|e| EngineError::QueryExecution(e.to_string()))?;
 
-        let columns: Vec<Column> = rows[0]
-            .columns()
-            .iter()
-            .map(|col| Column {
-                name: col.name().to_string(),
-                declared_type: Some(col.type_info().name().to_string()),
-            })
-            .collect();
+            let columns: Vec<Column> = result
+                .columns()
+                .iter()
+                .map(|col| Column {
+                    name: col.name().to_string(),
+                    declared_type: Some(col.type_info().name().to_string()),
+                })
+                .collect();
+            columns
+        };
 
         let result_rows: Vec<ResultRow> = rows
             .iter()
