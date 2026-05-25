@@ -62,6 +62,11 @@ impl TableViewerTab {
                 } else if let Err(e) = result {
                     eprintln!("TableViewerTab Lỗi: {}", e);
                 }
+
+                grid.table.update(cx, |table, cx| {
+                    table.delegate_mut().state.is_loading = false;
+                    cx.notify();
+                });
             });
         })
         .detach();
