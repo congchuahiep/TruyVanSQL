@@ -39,6 +39,7 @@ impl SmartDataGrid {
         let delegate = GridDelegate::new(GridState::new(), cell_editor.clone());
         let table = cx.new(|cx| {
             TableState::new(delegate, window, cx)
+                .row_header(false)
                 .cell_selectable(true)
                 .row_selectable(true)
         });
@@ -440,9 +441,9 @@ impl Render for SmartDataGrid {
                     .min_w_0()
                     .min_h_0()
                     .overflow_hidden()
+                    .font_family(cx.theme().mono_font_family.clone())
                     .child(
                         DataTable::new(&self.table)
-                            .stripe(true)
                             .bordered(false)
                             .scrollbar_visible(true, true),
                     ),

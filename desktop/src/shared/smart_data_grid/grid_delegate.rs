@@ -3,6 +3,7 @@ use crate::shared::smart_data_grid::EditingState;
 use super::grid_state::GridState;
 use gpui::prelude::FluentBuilder;
 use gpui::*;
+use gpui_component::ActiveTheme;
 use gpui_component::input::Input;
 use gpui_component::input::InputState;
 use gpui_component::table::{Column as GpuiColumn, TableDelegate, TableState};
@@ -49,12 +50,24 @@ impl TableDelegate for GridDelegate {
         self.cached_columns[col_ix].clone()
     }
 
+    fn render_tr(
+        &mut self,
+        row_ix: usize,
+        _window: &mut Window,
+        cx: &mut Context<TableState<Self>>,
+    ) -> Stateful<Div> {
+        let is_stripe = row_ix % 2 != 0;
+        div()
+            .id(("row", row_ix))
+            .when(is_stripe, |this| this.bg(cx.theme().table_even))
+    }
+
     fn render_td(
         &mut self,
         row_ix: usize,
         col_ix: usize,
         _window: &mut Window,
-        _cx: &mut Context<TableState<Self>>,
+        cx: &mut Context<TableState<Self>>,
     ) -> impl IntoElement {
         if let Some(EditingState {
             row,
@@ -98,27 +111,24 @@ impl TableDelegate for GridDelegate {
                     .unwrap_or_else(|| "".into())
             };
 
+        let outer = div().p_neg_2().w_full().h_full().flex().items_center();
+
+        let mut inner = div()
+            .size_full()
+            .border_r_1()
+            .border_color(cx.theme().border);
+
         if is_deleted {
-            div()
-                .p_neg_2()
-                .w_full()
-                .h_full()
-                .flex()
-                .items_center()
-                .child(div().line_through().text_color(gpui::red()).child(text))
-                .into_any_element()
+            inner = inner
+                .line_through()
+                .text_color(cx.theme().danger_foreground);
         } else if is_edited {
-            div()
-                .p_neg_2()
-                .w_full()
-                .h_full()
-                .flex()
-                .items_center()
-                .child(div().size_full().p_2().bg(gpui::rgb(0xfff085)).child(text))
-                .into_any_element()
+            inner = inner.p_2().bg(cx.theme().warning);
         } else {
-            text.into_any_element()
+            inner = inner.p_2();
         }
+
+        outer.child(inner.child(text)).into_any_element()
     }
 
     fn render_empty(
