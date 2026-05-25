@@ -193,7 +193,7 @@ mod tests {
         assert!(result.is_ok());
         match result.unwrap() {
             QueryResult::Query { columns, rows } => {
-                assert!(columns.is_empty());
+                assert!(!columns.is_empty());
                 assert!(rows.is_empty());
             }
             _ => panic!("Expected Query result"),

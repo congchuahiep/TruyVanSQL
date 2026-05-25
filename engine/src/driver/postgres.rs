@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use sqlx::postgres::PgPoolOptions;
-use sqlx::{Column as SqlxColumn, Executor, Row, Statement, TypeInfo};
+use sqlx::{Column as SqlxColumn, Executor, PgPool, Row, Statement, TypeInfo};
 
 use crate::DatabaseConfig;
 use crate::driver::{DatabaseDriver, SqlDialect};
@@ -9,7 +9,7 @@ use crate::error::EngineError;
 use crate::result::{Column, QueryResult, Row as ResultRow, Value};
 use crate::schema::{
     ColumnInfo, DatabaseBrief, ForeignKeyInfo, IndexInfo, PrimaryKey, SchemaBrief, SchemaKind,
-    TableBrief, TableInfo, TableKind,
+    TableBrief, TableKind,
 };
 use crate::{DatabaseKind, NetworkDbConfig};
 
@@ -17,7 +17,7 @@ use crate::{DatabaseKind, NetworkDbConfig};
 ///
 /// Sử dụng `sqlx::PgPool` bên trong để quản lý connection pool.
 pub struct PostgresDriver {
-    pool: sqlx::postgres::PgPool,
+    pool: PgPool,
 }
 
 impl PostgresDriver {
@@ -46,6 +46,51 @@ impl PostgresDriver {
             .map_err(|e| EngineError::Connection(e.to_string()))?;
 
         Ok(Self { pool })
+    }
+}
+
+impl SqlDialect for PostgresDriver {
+    fn quote_identifier(&self, identifier: &str) -> String {
+        format!("\"{}\"", identifier)
+    }
+
+    fn format_value(&self, value: &str, data_type: &str) -> String {
+        if value == "NULL" {
+            return "NULL".into();
+        }
+        let dt = data_type.to_uppercase();
+        if dt.contains("INT")
+            || dt.contains("SERIAL")
+            || dt.contains("REAL")
+            || dt.contains("FLOAT")
+            || dt.contains("DOUBLE")
+            || dt.contains("NUMERIC")
+            || dt.contains("DECIMAL")
+        {
+            if value
+                .chars()
+                .all(|c| c.is_digit(10) || c == '.' || c == '-')
+            {
+                return value.into();
+            }
+        }
+        if dt == "BOOLEAN" || dt == "BOOL" {
+            return value.into();
+        }
+        format!("'{}'", value.replace("'", "''"))
+    }
+}
+
+#[async_trait::async_trait]
+impl DatabaseDriver for PostgresDriver {
+    async fn execute(&self, query: &str) -> Result<QueryResult, EngineError> {
+        let trimmed = query.trim();
+
+        if self.is_dql(trimmed) {
+            self.execute_dql(query).await
+        } else {
+            self.execute_dml(query).await
+        }
     }
 
     async fn execute_dql(&self, query: &str) -> Result<QueryResult, EngineError> {
@@ -103,50 +148,9 @@ impl PostgresDriver {
             last_insert_rowid: None,
         })
     }
-}
 
-impl SqlDialect for PostgresDriver {
-    fn quote_identifier(&self, identifier: &str) -> String {
-        format!("\"{}\"", identifier)
-    }
-
-    fn format_value(&self, value: &str, data_type: &str) -> String {
-        if value == "NULL" {
-            return "NULL".into();
-        }
-        let dt = data_type.to_uppercase();
-        if dt.contains("INT")
-            || dt.contains("SERIAL")
-            || dt.contains("REAL")
-            || dt.contains("FLOAT")
-            || dt.contains("DOUBLE")
-            || dt.contains("NUMERIC")
-            || dt.contains("DECIMAL")
-        {
-            if value
-                .chars()
-                .all(|c| c.is_digit(10) || c == '.' || c == '-')
-            {
-                return value.into();
-            }
-        }
-        if dt == "BOOLEAN" || dt == "BOOL" {
-            return value.into();
-        }
-        format!("'{}'", value.replace("'", "''"))
-    }
-}
-
-#[async_trait::async_trait]
-impl DatabaseDriver for PostgresDriver {
-    async fn execute(&self, query: &str) -> Result<QueryResult, EngineError> {
-        let trimmed = query.trim();
-
-        if is_dql(trimmed) {
-            self.execute_dql(query).await
-        } else {
-            self.execute_dml(query).await
-        }
+    fn dql_keywords(&self) -> &'static [&'static str] {
+        &["SELECT", "EXPLAIN", "WITH", "SHOW", "TABLE", "DESCRIBE"]
     }
 
     async fn ping(&self) -> Result<(), EngineError> {
@@ -272,13 +276,7 @@ impl DatabaseDriver for PostgresDriver {
         Ok(schemas)
     }
 
-    async fn get_table_info(&self, table_name: &str) -> Result<TableInfo, EngineError> {
-        if table_name.contains(|c: char| !c.is_alphanumeric() && c != '_') {
-            return Err(EngineError::Schema(format!(
-                "Tên table không hợp lệ: '{table_name}'"
-            )));
-        }
-
+    async fn table_exists(&self, table_name: &str) -> Result<bool, EngineError> {
         let exists: Option<String> = sqlx::query_scalar(
             "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename = $1 \
              UNION ALL \
@@ -288,33 +286,11 @@ impl DatabaseDriver for PostgresDriver {
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| EngineError::Schema(e.to_string()))?;
-
-        if exists.is_none() {
-            return Err(EngineError::Schema(format!(
-                "Table '{table_name}' không tồn tại"
-            )));
-        }
-
-        let columns = self.get_columns(table_name).await?;
-        let primary_key = Self::extract_primary_key(&columns);
-        let foreign_keys = self.get_foreign_keys(table_name).await?;
-        let indexes = self.get_indexes(table_name).await?;
-
-        Ok(TableInfo {
-            name: table_name.to_string(),
-            columns,
-            primary_key,
-            foreign_keys,
-            indexes,
-        })
+        Ok(exists.is_some())
     }
 
     async fn get_table_row_count(&self, table_name: &str) -> Result<i64, EngineError> {
-        if table_name.contains(|c: char| !c.is_alphanumeric() && c != '_') {
-            return Err(EngineError::Schema(format!(
-                "Tên table không hợp lệ: '{table_name}'"
-            )));
-        }
+        self.validate_table_name(table_name)?;
 
         let query = format!("SELECT COUNT(*) FROM \"{}\"", table_name);
         let count: i64 = sqlx::query_scalar(&query)
@@ -324,9 +300,7 @@ impl DatabaseDriver for PostgresDriver {
 
         Ok(count)
     }
-}
 
-impl PostgresDriver {
     async fn get_columns(&self, table_name: &str) -> Result<Vec<ColumnInfo>, EngineError> {
         let rows = sqlx::query(
             "SELECT column_name, data_type, is_nullable, column_default \
@@ -364,41 +338,6 @@ impl PostgresDriver {
             .collect();
 
         Ok(columns)
-    }
-
-    async fn get_pk_columns(&self, table_name: &str) -> Result<Vec<String>, EngineError> {
-        let rows = sqlx::query(
-            "SELECT kcu.column_name \
-             FROM information_schema.table_constraints tc \
-             JOIN information_schema.key_column_usage kcu \
-               ON tc.constraint_name = kcu.constraint_name \
-               AND tc.table_schema = kcu.table_schema \
-             WHERE tc.constraint_type = 'PRIMARY KEY' \
-               AND tc.table_schema = 'public' \
-               AND tc.table_name = $1 \
-             ORDER BY kcu.ordinal_position",
-        )
-        .bind(table_name)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| EngineError::Schema(e.to_string()))?;
-
-        Ok(rows
-            .iter()
-            .filter_map(|row| row.try_get::<String, _>("column_name").ok())
-            .collect())
-    }
-
-    fn extract_primary_key(columns: &[ColumnInfo]) -> PrimaryKey {
-        let pk_columns: Vec<String> = columns
-            .iter()
-            .filter(|c| c.is_primary_key)
-            .map(|c| c.name.clone())
-            .collect();
-
-        PrimaryKey {
-            columns: pk_columns,
-        }
     }
 
     async fn get_foreign_keys(&self, table_name: &str) -> Result<Vec<ForeignKeyInfo>, EngineError> {
@@ -506,6 +445,31 @@ impl PostgresDriver {
     }
 }
 
+impl PostgresDriver {
+    async fn get_pk_columns(&self, table_name: &str) -> Result<Vec<String>, EngineError> {
+        let rows = sqlx::query(
+            "SELECT kcu.column_name \
+             FROM information_schema.table_constraints tc \
+             JOIN information_schema.key_column_usage kcu \
+               ON tc.constraint_name = kcu.constraint_name \
+               AND tc.table_schema = kcu.table_schema \
+             WHERE tc.constraint_type = 'PRIMARY KEY' \
+               AND tc.table_schema = 'public' \
+               AND tc.table_name = $1 \
+             ORDER BY kcu.ordinal_position",
+        )
+        .bind(table_name)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| EngineError::Schema(e.to_string()))?;
+
+        Ok(rows
+            .iter()
+            .filter_map(|row| row.try_get::<String, _>("column_name").ok())
+            .collect())
+    }
+}
+
 /// Parse column names từ PostgreSQL index definition.
 ///
 /// Ví dụ: `CREATE UNIQUE INDEX idx_email ON users (email, name)`
@@ -526,17 +490,6 @@ fn parse_index_columns(indexdef: &str) -> Vec<String> {
         .split(',')
         .map(|col| col.trim().trim_matches('"').to_string())
         .collect()
-}
-
-/// Kiểm tra query có phải DQL không dựa trên keyword đầu tiên.
-fn is_dql(query: &str) -> bool {
-    let upper = query.trim_start().to_uppercase();
-    upper.starts_with("SELECT")
-        || upper.starts_with("EXPLAIN")
-        || upper.starts_with("WITH")
-        || upper.starts_with("SHOW")
-        || upper.starts_with("TABLE")
-        || upper.starts_with("DESCRIBE")
 }
 
 /// Convert một `sqlx::postgres::PgRow` thành `result::Row`.

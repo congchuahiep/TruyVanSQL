@@ -3,7 +3,7 @@ use std::time::Duration;
 use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
 use sqlx::{Column as SqlxColumn, Executor, Row, Statement, TypeInfo};
 
-use crate::driver::{DatabaseDriver, SqlDialect};
+use crate::driver::{DatabaseDriver, SqlDialect, extract_primary_key};
 use crate::error::EngineError;
 use crate::result::{Column, QueryResult, Row as ResultRow, Value};
 use crate::schema::{
@@ -49,10 +49,43 @@ impl SqliteDriver {
 
         Ok(Self { pool })
     }
+}
 
-    /// Thực thi DQL query (SELECT, PRAGMA, EXPLAIN, WITH).
-    ///
-    /// Trả về `QueryResult::Query` chứa columns và rows.
+impl SqlDialect for SqliteDriver {
+    fn quote_identifier(&self, identifier: &str) -> String {
+        format!("\"{}\"", identifier)
+    }
+
+    fn format_value(&self, value: &str, data_type: &str) -> String {
+        if value == "NULL" {
+            "NULL".into()
+        } else {
+            let dt = data_type.to_uppercase();
+            if (dt.contains("INT") || dt.contains("REAL") || dt.contains("FLOAT"))
+                && value
+                    .chars()
+                    .all(|c| c.is_digit(10) || c == '.' || c == '-')
+            {
+                value.into()
+            } else {
+                format!("'{}'", value.replace("'", "''"))
+            }
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl DatabaseDriver for SqliteDriver {
+    async fn execute(&self, query: &str) -> Result<QueryResult, EngineError> {
+        let trimmed = query.trim();
+
+        if self.is_dql(trimmed) {
+            self.execute_dql(query).await
+        } else {
+            self.execute_dml(query).await
+        }
+    }
+
     async fn execute_dql(&self, query: &str) -> Result<QueryResult, EngineError> {
         let rows = sqlx::query(query)
             .fetch_all(&self.pool)
@@ -97,9 +130,6 @@ impl SqliteDriver {
         })
     }
 
-    /// Thực thi DML/DDL query (INSERT, UPDATE, DELETE, CREATE, DROP, ...).
-    ///
-    /// Trả về `QueryResult::Execution` chứa rows_affected và last_insert_rowid.
     async fn execute_dml(&self, query: &str) -> Result<QueryResult, EngineError> {
         let result = sqlx::query(query)
             .execute(&self.pool)
@@ -110,6 +140,123 @@ impl SqliteDriver {
             rows_affected: result.rows_affected(),
             last_insert_rowid: Some(result.last_insert_rowid()),
         })
+    }
+
+    fn dql_keywords(&self) -> &'static [&'static str] {
+        &["SELECT", "PRAGMA", "EXPLAIN", "WITH"]
+    }
+
+    async fn ping(&self) -> Result<(), EngineError> {
+        sqlx::query("SELECT 1")
+            .execute(&self.pool)
+            .await
+            .map_err(|e| EngineError::Connection(e.to_string()))?;
+        Ok(())
+    }
+
+    fn database_type(&self) -> &'static str {
+        "SQLite"
+    }
+
+    async fn list_tables(&self, schema: &str) -> Result<Vec<TableBrief>, EngineError> {
+        // SQLite chỉ có 1 schema "main", nên schema param được bỏ qua
+        // Query trả về cả tables VÀ views (không phải system tables)
+        let rows = sqlx::query(
+            "SELECT name, type FROM sqlite_master
+             WHERE type IN ('table', 'view')
+             AND name NOT LIKE 'sqlite_%'
+             ORDER BY name",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| EngineError::Schema(e.to_string()))?;
+
+        let tables: Vec<TableBrief> = rows
+            .iter()
+            .filter_map(|row| {
+                let name: String = row.try_get("name").ok()?;
+                if name.starts_with("sqlite_") {
+                    return None;
+                }
+                let kind_str: String = row.try_get("type").ok()?;
+                let kind = if kind_str == "view" {
+                    TableKind::View
+                } else {
+                    TableKind::Table
+                };
+                Some(TableBrief {
+                    name,
+                    kind,
+                    schema_name: Some(schema.to_string()),
+                })
+            })
+            .collect();
+
+        Ok(tables)
+    }
+
+    async fn list_views(&self, schema: &str) -> Result<Vec<TableBrief>, EngineError> {
+        // SQLite chỉ có 1 schema "main", nên schema param được bỏ qua
+        let rows = sqlx::query(
+            "SELECT name FROM sqlite_master
+             WHERE type = 'view'
+             AND name NOT LIKE 'sqlite_%'
+             ORDER BY name",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| EngineError::Schema(e.to_string()))?;
+
+        let views: Vec<TableBrief> = rows
+            .iter()
+            .filter_map(|row| {
+                let name: String = row.try_get("name").ok()?;
+                if name.starts_with("sqlite_") {
+                    return None;
+                }
+                Some(TableBrief {
+                    name,
+                    kind: TableKind::View,
+                    schema_name: Some(schema.to_string()),
+                })
+            })
+            .collect();
+
+        Ok(views)
+    }
+
+    async fn list_databases(&self) -> Result<Vec<DatabaseBrief>, EngineError> {
+        Ok(vec![])
+    }
+
+    async fn list_schemas(&self) -> Result<Vec<SchemaBrief>, EngineError> {
+        Ok(vec![SchemaBrief {
+            name: "main".to_string(),
+            kind: SchemaKind::User,
+        }])
+    }
+
+    async fn table_exists(&self, table_name: &str) -> Result<bool, EngineError> {
+        let exists = sqlx::query_scalar::<_, String>(
+            "SELECT name FROM sqlite_master WHERE type IN ('table', 'view') AND name = ?",
+        )
+        .bind(table_name)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| EngineError::Schema(e.to_string()))?;
+        Ok(exists.is_some())
+    }
+
+    async fn get_table_row_count(&self, table_name: &str) -> Result<i64, EngineError> {
+        self.validate_table_name(table_name)?;
+
+        let query = format!("SELECT COUNT(*) FROM \"{table_name}\"");
+        let count: i64 = sqlx::query_scalar(&query)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| EngineError::Schema(e.to_string()))?;
+
+        Ok(count)
     }
 
     /// Lấy danh sách columns của table qua PRAGMA table_info.
@@ -140,19 +287,6 @@ impl SqliteDriver {
             .collect();
 
         Ok(columns)
-    }
-
-    /// Lấy primary key columns từ PRAGMA table_info.
-    fn extract_primary_key(columns: &[ColumnInfo]) -> PrimaryKey {
-        let pk_columns: Vec<String> = columns
-            .iter()
-            .filter(|c| c.is_primary_key)
-            .map(|c| c.name.clone())
-            .collect();
-
-        PrimaryKey {
-            columns: pk_columns,
-        }
     }
 
     /// Lấy foreign keys qua PRAGMA foreign_key_list.
@@ -252,188 +386,6 @@ impl SqliteDriver {
     }
 }
 
-impl SqlDialect for SqliteDriver {
-    fn quote_identifier(&self, identifier: &str) -> String {
-        format!("\"{}\"", identifier)
-    }
-
-    fn format_value(&self, value: &str, data_type: &str) -> String {
-        if value == "NULL" {
-            "NULL".into()
-        } else {
-            let dt = data_type.to_uppercase();
-            if (dt.contains("INT") || dt.contains("REAL") || dt.contains("FLOAT"))
-                && value
-                    .chars()
-                    .all(|c| c.is_digit(10) || c == '.' || c == '-')
-            {
-                value.into()
-            } else {
-                format!("'{}'", value.replace("'", "''"))
-            }
-        }
-    }
-}
-
-#[async_trait::async_trait]
-impl DatabaseDriver for SqliteDriver {
-    async fn execute(&self, query: &str) -> Result<QueryResult, EngineError> {
-        let trimmed = query.trim();
-
-        if is_dql(trimmed) {
-            self.execute_dql(query).await
-        } else {
-            self.execute_dml(query).await
-        }
-    }
-
-    async fn ping(&self) -> Result<(), EngineError> {
-        sqlx::query("SELECT 1")
-            .execute(&self.pool)
-            .await
-            .map_err(|e| EngineError::Connection(e.to_string()))?;
-        Ok(())
-    }
-
-    fn database_type(&self) -> &'static str {
-        "SQLite"
-    }
-
-    async fn list_tables(&self, schema: &str) -> Result<Vec<TableBrief>, EngineError> {
-        // SQLite chỉ có 1 schema "main", nên schema param được bỏ qua
-        // Query trả về cả tables VÀ views (không phải system tables)
-        let rows = sqlx::query(
-            "SELECT name, type FROM sqlite_master
-             WHERE type IN ('table', 'view')
-             AND name NOT LIKE 'sqlite_%'
-             ORDER BY name",
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| EngineError::Schema(e.to_string()))?;
-
-        let tables: Vec<TableBrief> = rows
-            .iter()
-            .filter_map(|row| {
-                let name: String = row.try_get("name").ok()?;
-                if name.starts_with("sqlite_") {
-                    return None;
-                }
-                let kind_str: String = row.try_get("type").ok()?;
-                let kind = if kind_str == "view" {
-                    TableKind::View
-                } else {
-                    TableKind::Table
-                };
-                Some(TableBrief {
-                    name,
-                    kind,
-                    schema_name: Some(schema.to_string()),
-                })
-            })
-            .collect();
-
-        Ok(tables)
-    }
-
-    async fn list_views(&self, schema: &str) -> Result<Vec<TableBrief>, EngineError> {
-        // SQLite chỉ có 1 schema "main", nên schema param được bỏ qua
-        let rows = sqlx::query(
-            "SELECT name FROM sqlite_master
-             WHERE type = 'view'
-             AND name NOT LIKE 'sqlite_%'
-             ORDER BY name",
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| EngineError::Schema(e.to_string()))?;
-
-        let views: Vec<TableBrief> = rows
-            .iter()
-            .filter_map(|row| {
-                let name: String = row.try_get("name").ok()?;
-                if name.starts_with("sqlite_") {
-                    return None;
-                }
-                Some(TableBrief {
-                    name,
-                    kind: TableKind::View,
-                    schema_name: Some(schema.to_string()),
-                })
-            })
-            .collect();
-
-        Ok(views)
-    }
-
-    async fn list_databases(&self) -> Result<Vec<DatabaseBrief>, EngineError> {
-        Ok(vec![])
-    }
-
-    async fn list_schemas(&self) -> Result<Vec<SchemaBrief>, EngineError> {
-        Ok(vec![SchemaBrief {
-            name: "main".to_string(),
-            kind: SchemaKind::User,
-        }])
-    }
-
-    async fn get_table_info(&self, table_name: &str) -> Result<TableInfo, EngineError> {
-        // Kiểm tra table có tồn tại không
-        let exists = sqlx::query_scalar::<_, String>(
-            "SELECT name FROM sqlite_master WHERE type IN ('table', 'view') AND name = ?",
-        )
-        .bind(table_name)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| EngineError::Schema(e.to_string()))?;
-
-        if exists.is_none() {
-            return Err(EngineError::Schema(format!(
-                "Table '{table_name}' không tồn tại"
-            )));
-        }
-
-        let columns = self.get_columns(table_name).await?;
-        let primary_key = Self::extract_primary_key(&columns);
-        let foreign_keys = self.get_foreign_keys(table_name).await?;
-        let indexes = self.get_indexes(table_name).await?;
-
-        Ok(TableInfo {
-            name: table_name.to_string(),
-            columns,
-            primary_key,
-            foreign_keys,
-            indexes,
-        })
-    }
-
-    async fn get_table_row_count(&self, table_name: &str) -> Result<i64, EngineError> {
-        // Validate table name to prevent SQL injection
-        if table_name.contains(|c: char| !c.is_alphanumeric() && c != '_') {
-            return Err(EngineError::Schema(format!(
-                "Tên table không hợp lệ: '{table_name}'"
-            )));
-        }
-
-        let query = format!("SELECT COUNT(*) FROM \"{table_name}\"");
-        let count: i64 = sqlx::query_scalar(&query)
-            .fetch_one(&self.pool)
-            .await
-            .map_err(|e| EngineError::Schema(e.to_string()))?;
-
-        Ok(count)
-    }
-}
-
-/// Kiểm tra query có phải DQL không dựa trên keyword đầu tiên.
-fn is_dql(query: &str) -> bool {
-    let upper = query.trim_start().to_uppercase();
-    upper.starts_with("SELECT")
-        || upper.starts_with("PRAGMA")
-        || upper.starts_with("EXPLAIN")
-        || upper.starts_with("WITH")
-}
-
 /// Convert một `sqlx::SqliteRow` thành `result::Row`.
 fn convert_row(row: &sqlx::sqlite::SqliteRow, num_columns: usize) -> ResultRow {
     let values: Vec<Option<Value>> = (0..num_columns).map(|i| convert_value(row, i)).collect();
@@ -481,32 +433,42 @@ mod tests {
 
     // ===== is_dql tests =====
 
-    #[test]
-    fn test_is_dql_select() {
-        assert!(is_dql("SELECT * FROM users"));
-        assert!(is_dql("  SELECT * FROM users"));
-        assert!(is_dql("select * from users"));
+    #[tokio::test]
+    async fn test_is_dql_select() {
+        let driver = create_driver().await;
+
+        assert!(driver.is_dql("SELECT * FROM users"));
+        assert!(driver.is_dql("  SELECT * FROM users"));
+        assert!(driver.is_dql("select * from users"));
     }
 
-    #[test]
-    fn test_is_dql_pragma() {
-        assert!(is_dql("PRAGMA table_info(users)"));
+    #[tokio::test]
+    async fn test_is_dql_pragma() {
+        let driver = create_driver().await;
+
+        assert!(driver.is_dql("PRAGMA table_info(users)"));
     }
 
-    #[test]
-    fn test_is_dql_explain() {
-        assert!(is_dql("EXPLAIN SELECT * FROM users"));
+    #[tokio::test]
+    async fn test_is_dql_explain() {
+        let driver = create_driver().await;
+
+        assert!(driver.is_dql("EXPLAIN SELECT * FROM users"));
     }
 
-    #[test]
-    fn test_is_dql_with() {
-        assert!(is_dql("WITH cte AS (SELECT 1) SELECT * FROM cte"));
+    #[tokio::test]
+    async fn test_is_dql_with() {
+        let driver = create_driver().await;
+
+        assert!(driver.is_dql("WITH cte AS (SELECT 1) SELECT * FROM cte"));
     }
 
-    #[test]
-    fn test_is_not_dql() {
-        assert!(!is_dql("INSERT INTO users VALUES (1, 'Alice')"));
-        assert!(!is_dql("CREATE TABLE users (id INTEGER)"));
+    #[tokio::test]
+    async fn test_is_not_dql() {
+        let driver = create_driver().await;
+
+        assert!(!driver.is_dql("INSERT INTO users VALUES (1, 'Alice')"));
+        assert!(!driver.is_dql("CREATE TABLE users (id INTEGER)"));
     }
 
     // ===== Execution tests =====
