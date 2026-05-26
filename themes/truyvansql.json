@@ -17,7 +17,7 @@
 				"ring": "#0060de",
 				"success.background": "#B9F8CF60",
 				"danger.foreground": "#E7000B",
-				"danger.background": "#FFC9C9",
+				"danger.background": "#FFC9C960",
 				"warning.background": "#fff08560",
 				"sidebar.background": "#FAFAFA00",
 				"list.active.background": "#0060de15",

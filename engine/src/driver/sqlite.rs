@@ -414,7 +414,7 @@ fn convert_value(row: &sqlx::sqlite::SqliteRow, idx: usize) -> Option<Value> {
 mod tests {
     use super::*;
     use crate::{
-        DataChangeset, FileDbConfig,
+        DataChangeset, FileDbConfig, RowInsert,
         schema::{ColumnData, RowDelete, RowUpdate},
     };
 

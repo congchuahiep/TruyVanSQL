@@ -30,6 +30,7 @@ pub struct SmartDataGrid {
     pub client: SqlClient,
     pub table: Entity<TableState<GridDelegate>>,
     pub cell_editor: Entity<InputState>,
+    focus_handle: FocusHandle,
     _blur_subscription: gpui::Subscription,
 }
 
@@ -40,22 +41,28 @@ impl SmartDataGrid {
         let delegate = GridDelegate::new(GridState::new(), cell_editor.clone());
         let table = cx.new(|cx| {
             TableState::new(delegate, window, cx)
-                // .row_header(false)
+                .row_header(false)
                 .cell_selectable(true)
                 .row_selectable(true)
         });
 
-        let focus_handle = cell_editor.read(cx).focus_handle(cx);
-        let blur_sub = cx.on_blur(&focus_handle, window, |this: &mut Self, window, cx| {
-            match this.stage_cell_edit(window, cx) {
-                Ok((row_ix, col_ix)) => {
-                    this.table.update(cx, |table, cx| {
-                        table.set_selected_cell(row_ix, col_ix, cx);
-                    });
-                }
-                Err(error) => eprintln!("Blur error: {error}"),
-            };
-        });
+        let cell_editor_focus_handle = cell_editor.read(cx).focus_handle(cx);
+        let blur_sub = cx.on_blur(
+            &cell_editor_focus_handle,
+            window,
+            |this: &mut Self, window, cx| {
+                match this.stage_cell_edit(window, cx) {
+                    Ok((row_ix, col_ix)) => {
+                        this.table.update(cx, |table, cx| {
+                            table.set_selected_cell(row_ix, col_ix, cx);
+                        });
+                    }
+                    Err(error) => eprintln!("Blur error: {error}"),
+                };
+            },
+        );
+
+        let focus_handle = cx.focus_handle();
 
         // Bắt sự kiện từ Table (ví dụ: Double Click để Edit)
         cx.subscribe_in(&table, window, Self::on_table_event)
@@ -65,6 +72,7 @@ impl SmartDataGrid {
             client,
             table,
             cell_editor,
+            focus_handle,
             _blur_subscription: blur_sub,
         }
     }
@@ -339,6 +347,7 @@ impl SmartDataGrid {
         });
     }
 
+    /// Xóa dòng đã chọn, hoặc dòng chứa ô đã chọn nếu không có dòng nào được chọn
     fn on_delete_row(
         &mut self,
         _: &crate::action::datagrid::DeleteRow,
@@ -346,32 +355,31 @@ impl SmartDataGrid {
         cx: &mut Context<Self>,
     ) {
         self.table.update(cx, |table, cx| {
-            // ✅ Đọc selected_row TRƯỚC, tránh double borrow
-            let selected = table.selected_row();
-            let delegate = table.delegate_mut();
+            let selected_row = if let Some(row_ix) = table.selected_row() {
+                row_ix
+            } else if let Some((row_ix, _)) = table.selected_cell() {
+                row_ix
+            } else {
+                return; // Không làm gì cả nếu không select được row nào
+            };
 
-            match selected {
-                Some(row_ix) => {
-                    let state = &mut delegate.state;
-                    if state.is_inserted_row(row_ix) {
-                        // Xóa thẳng khỏi pending_inserts
-                        let ix = state.insert_index(row_ix);
-                        state.pending_inserts.remove(ix);
-                    } else {
-                        // Toggle pending_deletes
-                        if state.pending_deletes.contains(&row_ix) {
-                            state.pending_deletes.remove(&row_ix);
-                        } else {
-                            state.pending_deletes.insert(row_ix);
-                        }
-                    }
-                    cx.notify();
+            let delegate = table.delegate_mut();
+            let state = &mut delegate.state;
+            if state.is_inserted_row(selected_row) {
+                let ix = state.insert_index(selected_row);
+                state.pending_inserts.remove(ix);
+            } else {
+                if state.pending_deletes.contains(&selected_row) {
+                    state.pending_deletes.remove(&selected_row);
+                } else {
+                    state.pending_deletes.insert(selected_row);
                 }
-                None => {}
             }
+            cx.notify();
         });
     }
 
+    /// Thêm một dòng mới vào cuối bảng
     fn on_add_row(
         &mut self,
         _: &crate::action::datagrid::AddRow,
@@ -450,8 +458,15 @@ impl SmartDataGrid {
                     .cursor_pointer()
                     .icon(AppIcon::Plus)
                     .disabled(!is_editable || is_loading)
-                    .on_click(|_, window, cx| {
-                        window.dispatch_action(Box::new(crate::action::datagrid::AddRow), cx);
+                    .on_click({
+                        let focus_handle = self.focus_handle.clone();
+                        move |_, window, cx| {
+                            focus_handle.dispatch_action(
+                                &crate::action::datagrid::AddRow,
+                                window,
+                                cx,
+                            );
+                        }
                     }),
             )
             .child(
@@ -461,8 +476,15 @@ impl SmartDataGrid {
                     .cursor_pointer()
                     .icon(AppIcon::Minus)
                     .disabled(!is_editable || is_loading)
-                    .on_click(|_, window, cx| {
-                        window.dispatch_action(Box::new(crate::action::datagrid::DeleteRow), cx);
+                    .on_click({
+                        let focus_handle = self.focus_handle.clone();
+                        move |_, window, cx| {
+                            focus_handle.dispatch_action(
+                                &crate::action::datagrid::DeleteRow,
+                                window,
+                                cx,
+                            );
+                        }
                     }),
             )
             .child(div().w_px().h_4().mx_px().bg(cx.theme().border))
@@ -474,9 +496,15 @@ impl SmartDataGrid {
                     .size_6()
                     .cursor_pointer()
                     .icon(Icon::new(AppIcon::Check))
-                    .on_click(|_, window, cx| {
-                        window
-                            .dispatch_action(Box::new(crate::action::datagrid::CommitChanges), cx);
+                    .on_click({
+                        let focus_handle = self.focus_handle.clone();
+                        move |_, window, cx| {
+                            focus_handle.dispatch_action(
+                                &crate::action::datagrid::CommitChanges,
+                                window,
+                                cx,
+                            );
+                        }
                     })
                     .disabled(!has_changes || is_loading),
             )
@@ -489,9 +517,15 @@ impl SmartDataGrid {
                     .cursor_pointer()
                     .icon(Icon::new(AppIcon::X))
                     .disabled(!has_changes || is_loading)
-                    .on_click(|_, window, cx| {
-                        window
-                            .dispatch_action(Box::new(crate::action::datagrid::DiscardChanges), cx);
+                    .on_click({
+                        let focus_handle = self.focus_handle.clone();
+                        move |_, window, cx| {
+                            focus_handle.dispatch_action(
+                                &crate::action::datagrid::DiscardChanges,
+                                window,
+                                cx,
+                            );
+                        }
                     }),
             )
             .child(div().flex_1())
@@ -510,6 +544,7 @@ impl Render for SmartDataGrid {
 
         v_flex()
             .key_context("data-grid-container")
+            .track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::on_commit_changes))
             .on_action(cx.listener(Self::on_copy_cell))
             .on_action(cx.listener(Self::on_add_row))
