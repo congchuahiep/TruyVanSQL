@@ -1,5 +1,5 @@
 use crate::shared::smart_data_grid::grid_state::GridState;
-use engine::{ColumnData, DataChangeset, RowDelete, RowUpdate};
+use engine::{ColumnData, DataChangeset, RowDelete, RowInsert, RowUpdate};
 use std::collections::HashMap;
 use thiserror::Error;
 
@@ -65,10 +65,28 @@ impl<'a> DataChangesetBuilder<'a> {
             });
         }
 
+        let mut inserts = Vec::new();
+        for row_values in &self.state.pending_inserts {
+            let values: Vec<ColumnData> = row_values
+                .iter()
+                .enumerate()
+                .map(|(col_ix, value)| {
+                    let col = &self.state.columns[col_ix];
+                    ColumnData {
+                        column_name: col.name.clone(),
+                        value: value.clone(),
+                        data_type: col.declared_type.clone().unwrap_or_default(),
+                    }
+                })
+                .collect();
+            inserts.push(RowInsert { values });
+        }
+
         Ok(DataChangeset {
             table_name,
             updates,
             deletes,
+            inserts,
         })
     }
 

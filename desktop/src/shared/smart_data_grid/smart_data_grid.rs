@@ -40,7 +40,7 @@ impl SmartDataGrid {
         let delegate = GridDelegate::new(GridState::new(), cell_editor.clone());
         let table = cx.new(|cx| {
             TableState::new(delegate, window, cx)
-                .row_header(false)
+                // .row_header(false)
                 .cell_selectable(true)
                 .row_selectable(true)
         });
@@ -152,46 +152,48 @@ impl SmartDataGrid {
     ) -> Result<(usize, usize), StageError> {
         self.table.update(cx, |table, cx| {
             let delegate = table.delegate_mut();
-            let (r, c) = match &delegate.state.editing_state {
+            let state = &mut delegate.state;
+
+            let (r, c) = match &state.editing_state {
                 Some(s) => (s.row, s.col),
                 None => return Err(StageError::NoActiveEdit),
             };
 
             let value = self.cell_editor.read(cx).value().to_string();
-            let col_type = delegate.state.columns[c]
-                .declared_type
-                .clone()
-                .unwrap_or_default();
+            let col_type = state.columns[c].declared_type.clone().unwrap_or_default();
 
-            let original_value = delegate
-                .state
-                .original_rows
-                .get(r)
-                .and_then(|row| row.get(c))
-                .map(|s| s.to_string())
-                .unwrap_or_default();
+            if !validate_sql_type(&value, &col_type) {
+                state.editing_state.as_mut().unwrap().has_error = true;
+                self.cell_editor.update(cx, |ed, cx| ed.focus(window, cx));
+                cx.notify();
+                return Err(StageError::InvalidData(format!(
+                    "Giá trị '{}' không đúng định dạng {}",
+                    value, col_type
+                )));
+            }
 
-            if value == original_value {
-                delegate.state.pending_edits.remove(&(r, c));
-                delegate.state.editing_state = None;
+            if state.is_inserted_row(r) {
+                let insert_index = state.insert_index(r);
+                state
+                    .pending_inserts
+                    .get_mut(insert_index)
+                    .and_then(|row| row.get_mut(c))
+                    .map(|cell| *cell = value);
+
+                state.editing_state = None;
                 cx.notify();
                 return Ok((r, c));
             }
 
-            if validate_sql_type(&value, &col_type) {
-                delegate.state.pending_edits.insert((r, c), value);
-                delegate.state.editing_state = None;
-                cx.notify();
-                Ok((r, c))
+            let original = state.cell_value(r, c);
+            if value == original {
+                state.pending_edits.remove(&(r, c));
             } else {
-                delegate.state.editing_state.as_mut().unwrap().has_error = true;
-                self.cell_editor.update(cx, |ed, cx| ed.focus(window, cx));
-                cx.notify();
-                Err(StageError::InvalidData(format!(
-                    "Giá trị '{}' không đúng định dạng {}",
-                    value, col_type
-                )))
+                state.pending_edits.insert((r, c), value);
             }
+            state.editing_state = None;
+            cx.notify();
+            Ok((r, c))
         })
     }
 
@@ -249,7 +251,7 @@ impl SmartDataGrid {
     fn on_copy_cell(
         &mut self,
         _: &crate::action::datagrid::CopyCell,
-        _window: &mut Window,
+        _: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let table = self.table.read(cx);
@@ -278,7 +280,7 @@ impl SmartDataGrid {
     fn on_commit_changes(
         &mut self,
         _: &crate::action::datagrid::CommitChanges,
-        _window: &mut Window,
+        _: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let state = &self.table.read(cx).delegate().state;
@@ -337,6 +339,75 @@ impl SmartDataGrid {
         });
     }
 
+    fn on_delete_row(
+        &mut self,
+        _: &crate::action::datagrid::DeleteRow,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.table.update(cx, |table, cx| {
+            // ✅ Đọc selected_row TRƯỚC, tránh double borrow
+            let selected = table.selected_row();
+            let delegate = table.delegate_mut();
+
+            match selected {
+                Some(row_ix) => {
+                    let state = &mut delegate.state;
+                    if state.is_inserted_row(row_ix) {
+                        // Xóa thẳng khỏi pending_inserts
+                        let ix = state.insert_index(row_ix);
+                        state.pending_inserts.remove(ix);
+                    } else {
+                        // Toggle pending_deletes
+                        if state.pending_deletes.contains(&row_ix) {
+                            state.pending_deletes.remove(&row_ix);
+                        } else {
+                            state.pending_deletes.insert(row_ix);
+                        }
+                    }
+                    cx.notify();
+                }
+                None => {}
+            }
+        });
+    }
+
+    fn on_add_row(
+        &mut self,
+        _: &crate::action::datagrid::AddRow,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.table.update(cx, |table, cx| {
+            let delegate = table.delegate_mut();
+            let col_count = delegate.state.columns.len();
+            if col_count == 0 {
+                return;
+            }
+            delegate
+                .state
+                .pending_inserts
+                .push(vec![String::new(); col_count]);
+            cx.notify();
+        });
+    }
+
+    fn on_discard_changes(
+        &mut self,
+        _: &crate::action::datagrid::DiscardChanges,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.table.update(cx, |table, cx| {
+            let delegate = table.delegate_mut();
+            delegate.state.pending_edits.clear();
+            delegate.state.pending_deletes.clear();
+            delegate.state.pending_inserts.clear();
+            delegate.state.editing_state = None;
+            cx.notify();
+        });
+    }
+
     fn render_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let delegate = self.table.read(cx).delegate();
         let state = &delegate.state;
@@ -378,7 +449,10 @@ impl SmartDataGrid {
                     .size_6()
                     .cursor_pointer()
                     .icon(AppIcon::Plus)
-                    .disabled(!is_editable || is_loading),
+                    .disabled(!is_editable || is_loading)
+                    .on_click(|_, window, cx| {
+                        window.dispatch_action(Box::new(crate::action::datagrid::AddRow), cx);
+                    }),
             )
             .child(
                 Button::new("btn-delete-row")
@@ -386,7 +460,10 @@ impl SmartDataGrid {
                     .size_6()
                     .cursor_pointer()
                     .icon(AppIcon::Minus)
-                    .disabled(!is_editable || is_loading),
+                    .disabled(!is_editable || is_loading)
+                    .on_click(|_, window, cx| {
+                        window.dispatch_action(Box::new(crate::action::datagrid::DeleteRow), cx);
+                    }),
             )
             .child(div().w_px().h_4().mx_px().bg(cx.theme().border))
             .child(
@@ -411,7 +488,11 @@ impl SmartDataGrid {
                     .size_6()
                     .cursor_pointer()
                     .icon(Icon::new(AppIcon::X))
-                    .disabled(!has_changes || is_loading),
+                    .disabled(!has_changes || is_loading)
+                    .on_click(|_, window, cx| {
+                        window
+                            .dispatch_action(Box::new(crate::action::datagrid::DiscardChanges), cx);
+                    }),
             )
             .child(div().flex_1())
             .child(
@@ -431,6 +512,9 @@ impl Render for SmartDataGrid {
             .key_context("data-grid-container")
             .on_action(cx.listener(Self::on_commit_changes))
             .on_action(cx.listener(Self::on_copy_cell))
+            .on_action(cx.listener(Self::on_add_row))
+            .on_action(cx.listener(Self::on_delete_row))
+            .on_action(cx.listener(Self::on_discard_changes))
             .size_full()
             .child(self.render_toolbar(cx))
             .child(

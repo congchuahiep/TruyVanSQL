@@ -43,7 +43,7 @@ impl TableDelegate for GridDelegate {
     }
 
     fn rows_count(&self, _: &App) -> usize {
-        self.state.original_rows.len() // Tương lai sẽ cộng thêm dòng insert
+        self.state.original_rows.len() + self.state.pending_inserts.len()
     }
 
     fn column(&self, col_ix: usize, _: &App) -> GpuiColumn {
@@ -56,9 +56,21 @@ impl TableDelegate for GridDelegate {
         _window: &mut Window,
         cx: &mut Context<TableState<Self>>,
     ) -> Stateful<Div> {
+        let is_inserted = self.state.is_inserted_row(row_ix);
+        let is_deleted = self.state.is_deleted_row(row_ix);
         let is_stripe = row_ix % 2 != 0;
+
         div()
             .id(("row", row_ix))
+            .relative()
+            .when(is_deleted, |this| {
+                this.child(div().absolute().inset_0().bg(cx.theme().danger))
+                    .line_through()
+                    .text_color(cx.theme().danger_foreground)
+            })
+            .when(is_inserted, |this| {
+                this.child(div().absolute().inset_0().bg(cx.theme().success))
+            })
             .when(is_stripe, |this| this.bg(cx.theme().table_even))
     }
 
@@ -97,18 +109,27 @@ impl TableDelegate for GridDelegate {
         }
 
         let is_edited = self.state.pending_edits.contains_key(&(row_ix, col_ix));
-        let is_deleted = self.state.pending_deletes.contains(&row_ix);
 
+        let original_len = self.state.original_rows.len();
         let text: SharedString =
             if let Some(new_val) = self.state.pending_edits.get(&(row_ix, col_ix)) {
                 new_val.clone().into()
+            } else if row_ix >= original_len {
+                let insert_ix = row_ix - original_len;
+                self.state
+                    .pending_inserts
+                    .get(insert_ix)
+                    .and_then(|row| row.get(col_ix))
+                    .cloned()
+                    .map(SharedString::from)
+                    .unwrap_or_default()
             } else {
                 self.state
                     .original_rows
                     .get(row_ix)
                     .and_then(|row| row.get(col_ix))
                     .cloned()
-                    .unwrap_or_else(|| "".into())
+                    .unwrap_or_default()
             };
 
         let outer = div().p_neg_2().w_full().h_full().flex().items_center();
@@ -118,11 +139,7 @@ impl TableDelegate for GridDelegate {
             .border_r_1()
             .border_color(cx.theme().border);
 
-        if is_deleted {
-            inner = inner
-                .line_through()
-                .text_color(cx.theme().danger_foreground);
-        } else if is_edited {
+        if is_edited {
             inner = inner.p_2().bg(cx.theme().warning);
         } else {
             inner = inner.p_2();
@@ -140,10 +157,23 @@ impl TableDelegate for GridDelegate {
     }
 
     fn cell_text(&self, row_ix: usize, col_ix: usize, _: &App) -> String {
+        // Kiểm tra pending edits trước (áp dụng cho cả original lẫn inserted)
         if let Some(new_val) = self.state.pending_edits.get(&(row_ix, col_ix)) {
             return new_val.clone();
         }
-
+        let original_len = self.state.original_rows.len();
+        // Nếu là inserted row (nằm ngoài phạm vi original)
+        if row_ix >= original_len {
+            let insert_ix = row_ix - original_len;
+            return self
+                .state
+                .pending_inserts
+                .get(insert_ix)
+                .and_then(|row| row.get(col_ix))
+                .cloned()
+                .unwrap_or_default();
+        }
+        // Original row
         self.state
             .original_rows
             .get(row_ix)

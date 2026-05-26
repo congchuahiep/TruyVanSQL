@@ -17,7 +17,16 @@ pub mod datagrid {
     use gpui::actions;
     actions!(
         grid,
-        [CopyCell, ConfirmEdit, CancelEdit, StartEdit, CommitChanges]
+        [
+            CopyCell,
+            ConfirmEdit,
+            CancelEdit,
+            StartEdit,
+            CommitChanges,
+            AddRow,
+            DeleteRow,
+            DiscardChanges,
+        ]
     );
 }
 

@@ -49,13 +49,64 @@ impl GridState {
         }
     }
 
+    /// Số lượng original rows (không tính pending_inserts)
+    pub fn original_len(&self) -> usize {
+        self.original_rows.len()
+    }
+
+    /// Tổng số rows hiển thị trên grid
+    pub fn total_len(&self) -> usize {
+        self.original_rows.len() + self.pending_inserts.len()
+    }
+
+    /// Đổi row index toàn cục → index trong pending_inserts
+    pub fn insert_index(&self, row_ix: usize) -> usize {
+        row_ix - self.original_len()
+    }
+
+    /// Kiểm tra xem grid có thể chỉnh sửa không (có source_table và primary_keys)
     pub fn is_editable(&self) -> bool {
         self.source_table.is_some() && !self.primary_keys.is_empty()
     }
 
+    /// Row này có bị đánh dấu xóa không?
+    pub fn is_deleted_row(&self, row_ix: usize) -> bool {
+        row_ix < self.original_rows.len() && self.pending_deletes.contains(&row_ix)
+    }
+
+    /// Row này có phải là pending insert không?
+    pub fn is_inserted_row(&self, row_ix: usize) -> bool {
+        row_ix >= self.original_rows.len()
+    }
+
+    /// Kiểm tra xem sự thay đổi vào database không
     pub fn has_pending_changes(&self) -> bool {
         !self.pending_edits.is_empty()
             || !self.pending_deletes.is_empty()
             || !self.pending_inserts.is_empty()
+    }
+
+    /// Lấy text của một cell (ưu tiên pending_edits > pending_inserts > original)
+    pub fn cell_value(&self, row_ix: usize, col_ix: usize) -> String {
+        // Pending edit (cả original lẫn inserted đều có thể có)
+        if let Some(val) = self.pending_edits.get(&(row_ix, col_ix)) {
+            return val.clone();
+        }
+
+        if self.is_inserted_row(row_ix) {
+            let ix = row_ix - self.original_len();
+            return self
+                .pending_inserts
+                .get(ix)
+                .and_then(|row| row.get(col_ix))
+                .cloned()
+                .unwrap_or_default();
+        }
+
+        self.original_rows
+            .get(row_ix)
+            .and_then(|row| row.get(col_ix))
+            .map(|s| s.to_string())
+            .unwrap_or_default()
     }
 }
