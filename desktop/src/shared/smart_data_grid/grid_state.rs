@@ -24,6 +24,7 @@ pub struct GridState {
     pub limit: usize,
     pub offset: usize,
     pub total_rows: Option<usize>,
+    pub error: Option<SharedString>,
     pub is_loading: bool,
 
     pub editing_state: Option<EditingState>,
@@ -42,6 +43,7 @@ impl GridState {
             limit: 1000,
             offset: 0,
             total_rows: None,
+            error: None,
             is_loading: false,
             editing_state: None,
         }

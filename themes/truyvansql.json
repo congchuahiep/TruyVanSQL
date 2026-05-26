@@ -15,7 +15,7 @@
 				"foreground": "#000000",
 				"border": "#e4e4e7",
 				"ring": "#0060de",
-				"danger.foreground": "#ffffff",
+				"danger.foreground": "#F0B100",
 				"danger.background": "#E7000B",
 				"warning.background": "#fff085",
 				"sidebar.background": "#FAFAFA00",

@@ -1,11 +1,12 @@
 use super::{DataChangesetBuilder, EditingState, GridDelegate, GridState, StageError};
 use assets::AppIcon;
 use engine::{Column, Row, SqlClient};
+use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::button::{Button, ButtonCustomVariant, ButtonVariants};
 use gpui_component::input::InputState;
 use gpui_component::table::{DataTable, TableDelegate, TableEvent, TableState};
-use gpui_component::{ActiveTheme, Disableable, Icon, h_flex, v_flex};
+use gpui_component::{ActiveTheme, Disableable, Icon, Sizable, h_flex, v_flex};
 
 /// TODO: Nên chuyển cái hàm này sang chỗ khác
 fn validate_sql_type(text: &str, data_type: &str) -> bool {
@@ -424,6 +425,8 @@ impl SmartDataGrid {
 
 impl Render for SmartDataGrid {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.table.read(cx).delegate().state.clone();
+
         v_flex()
             .key_context("data-grid-container")
             .on_action(cx.listener(Self::on_commit_changes))
@@ -442,11 +445,42 @@ impl Render for SmartDataGrid {
                     .min_h_0()
                     .overflow_hidden()
                     .font_family(cx.theme().mono_font_family.clone())
-                    .child(
-                        DataTable::new(&self.table)
-                            .bordered(false)
-                            .scrollbar_visible(true, true),
-                    ),
+                    // Hiển thị error view
+                    .when_some(state.error.as_ref(), |this, error| {
+                        this.child(
+                            v_flex().size_full().items_center().justify_center().child(
+                                v_flex()
+                                    .items_center()
+                                    .gap_2()
+                                    .max_w_128()
+                                    .px_12()
+                                    .child(
+                                        div()
+                                            .line_height(px(24.))
+                                            .text_xl()
+                                            .text_color(cx.theme().danger_foreground)
+                                            .child(
+                                                Icon::new(AppIcon::TriangleWarningFill)
+                                                    .with_size(px(32.)),
+                                            ),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_sm()
+                                            .text_color(cx.theme().muted_foreground)
+                                            .child(error.clone()),
+                                    ),
+                            ),
+                        )
+                    })
+                    // Hiển thị data grid chính
+                    .when(state.error.is_none(), |this| {
+                        this.child(
+                            DataTable::new(&self.table)
+                                .bordered(false)
+                                .scrollbar_visible(true, true),
+                        )
+                    }),
             )
     }
 }

@@ -1,51 +1,15 @@
 use std::rc::Rc;
 
+use assets::AppIcon;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, ClickEvent, Div, Edges, Hsla, InteractiveElement, IntoElement, ParentElement,
     Pixels, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window, div, px,
     relative,
 };
-use gpui_component::{ActiveTheme, Icon, IconName, Selectable, Sizable, Size, StyledExt, h_flex};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum TabVariant {
-    Tab,
-}
-
-impl TabVariant {
-    fn height(self, size: Size) -> Pixels {
-        match size {
-            Size::XSmall => px(20.),
-            Size::Small => px(24.),
-            Size::Large => px(36.),
-            _ => px(32.),
-        }
-    }
-
-    pub(super) fn inner_height(self, size: Size) -> Pixels {
-        match size {
-            Size::XSmall => px(18.),
-            Size::Small => px(22.),
-            Size::Large => px(36.),
-            _ => px(30.),
-        }
-    }
-
-    fn inner_paddings(self, size: Size) -> Edges<Pixels> {
-        let padding_x = match size {
-            Size::XSmall => px(8.),
-            Size::Small => px(10.),
-            Size::Large => px(16.),
-            _ => px(12.),
-        };
-        Edges {
-            left: padding_x,
-            right: padding_x,
-            ..Default::default()
-        }
-    }
-}
+use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::spinner::Spinner;
+use gpui_component::{ActiveTheme, Icon, IconName, Selectable, Sizable};
 
 #[allow(dead_code)]
 struct TabStyle {
@@ -132,12 +96,14 @@ pub struct Tab {
     non_border_l: Option<bool>,
     suffix: Option<AnyElement>,
     children: Vec<AnyElement>,
-    size: Size,
     disabled: bool,
     selected: bool,
     dirtied: bool,
+    loading: bool,
+    close_button: bool,
     indicator_active: bool,
     on_click: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>>,
+    on_close: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>>,
 }
 
 impl From<&'static str> for Tab {
@@ -181,12 +147,14 @@ impl Default for Tab {
             non_border_l: None,
             suffix: None,
             children: Vec::new(),
-            size: Size::default(),
             disabled: false,
             selected: false,
             dirtied: false,
+            loading: false,
+            close_button: false,
             indicator_active: false,
             on_click: None,
+            on_close: None,
         }
     }
 }
@@ -223,6 +191,24 @@ impl Tab {
 
     pub fn dirtied(mut self, dirtied: bool) -> Self {
         self.dirtied = dirtied;
+        self
+    }
+
+    pub fn loading(mut self, loading: bool) -> Self {
+        self.loading = loading;
+        self
+    }
+
+    pub fn close_button(mut self, close_button: bool) -> Self {
+        self.close_button = close_button;
+        self
+    }
+
+    pub fn on_close(
+        mut self,
+        on_close: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_close = Some(Rc::new(on_close));
         self
     }
 
@@ -281,13 +267,6 @@ impl Styled for Tab {
     }
 }
 
-impl Sizable for Tab {
-    fn with_size(mut self, size: impl Into<Size>) -> Self {
-        self.size = size.into();
-        self
-    }
-}
-
 impl RenderOnce for Tab {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let tab_style = if self.disabled {
@@ -321,25 +300,29 @@ impl RenderOnce for Tab {
             )
         };
 
-        let inner_height = TabVariant::Tab.inner_height(self.size);
-        let inner_paddings = TabVariant::Tab.inner_paddings(self.size);
-        let height = TabVariant::Tab.height(self.size);
+        let icon_element = if self.loading {
+            Some(Spinner::new().with_size(px(14.)).into_any_element())
+        } else {
+            self.icon
+                .map(|icon| icon.with_size(px(14.)).into_any_element())
+        };
 
         self.base
             .id(self.ix)
+            .relative()
             .flex()
-            .flex_wrap()
             .gap_1()
             .items_center()
+            .justify_center()
             .flex_shrink_0()
-            .h(height)
+            .h_8()
+            .pl_5()
+            .when_else(self.close_button, |this| this.pr_7(), |this| this.pr_5())
+            .line_height(relative(1.))
+            .whitespace_nowrap()
             .overflow_hidden()
             .text_color(tab_style.fg)
-            .map(|this| match self.size {
-                Size::XSmall => this.text_xs(),
-                Size::Large => this.text_base(),
-                _ => this.text_sm(),
-            })
+            .text_sm()
             .bg(tab_style.bg)
             .border_l(borders_left)
             .border_r(tab_style.borders.right)
@@ -355,34 +338,35 @@ impl RenderOnce for Tab {
                 })
             })
             .when_some(self.prefix, |this, prefix| this.child(prefix))
-            .child(
-                h_flex()
-                    .flex_1()
-                    .ml_2()
-                    .relative()
-                    .h(inner_height)
-                    .line_height(relative(1.))
-                    .whitespace_nowrap()
-                    .items_center()
-                    .justify_center()
-                    .overflow_hidden()
-                    .gap_1()
-                    .flex_shrink_0()
-                    .paddings(inner_paddings)
-                    .when(self.dirtied, |this| {
-                        this.child(
-                            div()
-                                .size_1p5()
-                                .rounded_full()
-                                .bg(cx.theme().blue)
-                                .absolute()
-                                .left_0(),
-                        )
-                    })
-                    .when_some(self.icon, |this, icon| this.child(icon).mb_neg_1())
-                    .when_some(self.label, |this, label| this.child(label)),
-            )
+            .when(self.dirtied, |this| {
+                this.child(
+                    div()
+                        .absolute()
+                        .left_2()
+                        .size_1p5()
+                        .rounded_full()
+                        .bg(cx.theme().blue),
+                )
+            })
+            .when_some(icon_element, |this, icon| this.child(icon))
+            .when_some(self.label, |this, label| {
+                this.child(div().child(label).pb_0p5())
+            })
             .when_some(self.suffix, |this, suffix| this.child(suffix))
+            .when(self.close_button, |this| {
+                this.child(
+                    Button::new(format!("close-tab-{}", self.ix))
+                        .absolute()
+                        .right_1()
+                        .ghost()
+                        .xsmall()
+                        .cursor_pointer()
+                        .icon(AppIcon::X)
+                        .when_some(self.on_close.clone(), |this, on_close| {
+                            this.on_click(move |event, window, cx| on_close(event, window, cx))
+                        }),
+                )
+            })
             .when(!self.disabled, |this| {
                 this.when_some(self.on_click.clone(), |this, on_click| {
                     this.on_click(move |event, window, cx| on_click(event, window, cx))

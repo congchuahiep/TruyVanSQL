@@ -60,7 +60,10 @@ impl TableViewerTab {
                     grid.set_data(columns, rows, cx);
                     grid.set_metadata(Some(table_name.clone()), pks, cx);
                 } else if let Err(e) = result {
-                    eprintln!("TableViewerTab Lỗi: {}", e);
+                    grid.table.update(cx, |table, _cx| {
+                        table.delegate_mut().state.error = Some(e.to_string().into());
+                    });
+                    eprintln!("{}", e);
                 }
 
                 grid.table.update(cx, |table, cx| {
@@ -75,16 +78,12 @@ impl TableViewerTab {
 
 impl TabItem for TableViewerTab {
     fn tab_info(&self, cx: &App) -> TabInfo {
+        let state = &self.grid.read(cx).table.read(cx).delegate().state;
+
         TabInfo {
             title: self.table_name.clone().into(),
-            is_dirty: self
-                .grid
-                .read(cx)
-                .table
-                .read(cx)
-                .delegate()
-                .state
-                .has_pending_changes(),
+            is_dirty: state.has_pending_changes(),
+            is_loading: state.is_loading,
             icon: AppIcon::Table,
         }
     }

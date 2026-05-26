@@ -1,12 +1,9 @@
 use gpui::prelude::*;
 use gpui::*;
 use gpui_component::ActiveTheme;
-use gpui_component::Sizable;
-use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::h_flex;
 
 use crate::component::tab::Tab;
-use assets::AppIcon;
 
 use crate::panel::tab::TabManager;
 
@@ -57,6 +54,7 @@ impl Render for TabBar {
                         let info = tab.info(cx);
                         let tab_title = info.title;
                         let is_dirty = info.is_dirty;
+                        let is_loading = info.is_loading;
                         let icon = info.icon;
                         let is_selected = active_index == Some(i);
 
@@ -80,21 +78,13 @@ impl Render for TabBar {
                             })
                             .icon(icon)
                             .dirtied(is_dirty)
-                            .suffix(
-                                h_flex().child(
-                                    Button::new(format!("close-tab-{}", i))
-                                        .ghost()
-                                        .xsmall()
-                                        .mr_1()
-                                        .cursor_pointer()
-                                        .icon(AppIcon::X)
-                                        .on_click(move |_e, _window, cx| {
-                                            cx.stop_propagation();
-                                            tab_manager_for_close
-                                                .update(cx, |service, cx| service.close_tab(i, cx));
-                                        }),
-                                ),
-                            )
+                            .loading(is_loading)
+                            .close_button(true)
+                            .on_close(move |_, _, cx| {
+                                cx.stop_propagation();
+                                tab_manager_for_close
+                                    .update(cx, |service, cx| service.close_tab(i, cx));
+                            })
                             .into_any_element()
                     })),
             )

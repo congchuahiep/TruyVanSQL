@@ -9,6 +9,9 @@ pub struct TabInfo {
     /// Kiểm tra tab có dữ liệu chưa lưu hay không (hiển thị dấu chấm tròn)
     pub is_dirty: bool,
 
+    /// Tab đang tải dữ liệu (hiển thị spinner loading)
+    pub is_loading: bool,
+
     /// Icon hiển thị trên thanh Tab (ví dụ: biểu tượng database, biểu tượng file)
     pub icon: AppIcon,
 }

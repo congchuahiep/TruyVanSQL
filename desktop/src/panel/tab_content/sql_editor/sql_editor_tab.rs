@@ -54,6 +54,7 @@ impl TabItem for SqlEditorTab {
         TabInfo {
             title: format!("SQL: {}", conn_name).into(),
             is_dirty: false,
+            is_loading: false,
             icon: AppIcon::FileSql,
         }
     }
