@@ -912,6 +912,13 @@ mod tests {
                     data_type: "INTEGER".to_string(),
                 }],
             }],
+            inserts: vec![RowInsert {
+                values: vec![ColumnData {
+                    column_name: "id".to_string(),
+                    value: "3".to_string(),
+                    data_type: "INTEGER".to_string(),
+                }],
+            }],
         };
 
         let script = driver.generate_changeset_script(&changeset);

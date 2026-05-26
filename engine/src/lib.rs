@@ -11,6 +11,6 @@ pub use error::EngineError;
 pub use result::{Column, QueryResult, Row, Value};
 pub use schema::{
     ColumnData, ColumnInfo, DataChangeset, DatabaseBrief, ForeignKeyInfo, IndexInfo, PrimaryKey,
-    RowDelete, RowUpdate, SchemaBrief, SchemaKind, TableBrief, TableInfo, TableKind,
+    RowDelete, RowInsert, RowUpdate, SchemaBrief, SchemaKind, TableBrief, TableInfo, TableKind,
 };
 pub use sql_client::SqlClient;

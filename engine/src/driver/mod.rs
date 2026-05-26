@@ -117,6 +117,27 @@ pub trait DatabaseDriver: SqlDialect + Send + Sync {
             ));
         }
 
+        for insert in &changeset.inserts {
+            let columns = insert
+                .values
+                .iter()
+                .map(|c| self.quote_identifier(&c.column_name))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let values = insert
+                .values
+                .iter()
+                .map(|c| self.format_value(&c.value, &c.data_type))
+                .collect::<Vec<_>>()
+                .join(", ");
+            script.push_str(&format!(
+                "INSERT INTO {} ({}) VALUES ({});\n",
+                self.quote_identifier(&changeset.table_name),
+                columns,
+                values
+            ));
+        }
+
         script
     }
 
