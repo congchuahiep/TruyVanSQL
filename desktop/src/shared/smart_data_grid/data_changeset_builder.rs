@@ -1,5 +1,6 @@
 use crate::shared::smart_data_grid::grid_state::GridState;
 use engine::{ColumnData, DataChangeset, RowDelete, RowInsert, RowUpdate};
+use gpui::SharedString;
 use std::collections::HashMap;
 use thiserror::Error;
 
@@ -32,14 +33,15 @@ impl<'a> DataChangesetBuilder<'a> {
             return Err(DataChangesetError::PrimaryKeyNotFound(table_name));
         }
 
+        // UPDATE
         let mut updates = Vec::new();
-        let mut edits_by_row: HashMap<usize, Vec<(usize, String)>> = HashMap::new();
+        let mut edits_by_row: HashMap<usize, Vec<(usize, Option<String>)>> = HashMap::new();
 
         for (&(row, col), value) in &self.state.pending_edits {
             edits_by_row
                 .entry(row)
                 .or_default()
-                .push((col, value.clone()));
+                .push((col, value.as_deref().map(|v| v.to_string())));
         }
 
         for (row_ix, row_edits) in edits_by_row {
@@ -48,7 +50,7 @@ impl<'a> DataChangesetBuilder<'a> {
                 let col = &self.state.columns[col_ix];
                 changes.push(ColumnData {
                     column_name: col.name.clone(),
-                    value,
+                    value: value,
                     data_type: col.declared_type.clone().unwrap_or_default(),
                 });
             }
@@ -58,6 +60,7 @@ impl<'a> DataChangesetBuilder<'a> {
             });
         }
 
+        // DELETE
         let mut deletes = Vec::new();
         for &row_ix in &self.state.pending_deletes {
             deletes.push(RowDelete {
@@ -65,6 +68,7 @@ impl<'a> DataChangesetBuilder<'a> {
             });
         }
 
+        // INSERT
         let mut inserts = Vec::new();
         for row_values in &self.state.pending_inserts {
             let values: Vec<ColumnData> = row_values
@@ -74,7 +78,7 @@ impl<'a> DataChangesetBuilder<'a> {
                     let col = &self.state.columns[col_ix];
                     ColumnData {
                         column_name: col.name.clone(),
-                        value: value.clone(),
+                        value: value.as_deref().map(|v| v.to_string()),
                         data_type: col.declared_type.clone().unwrap_or_default(),
                     }
                 })
@@ -101,7 +105,9 @@ impl<'a> DataChangesetBuilder<'a> {
                     .iter()
                     .position(|c| &c.name == pk_name)
                     .unwrap();
-                let original_val = self.state.original_rows[row_ix][pk_col_ix].to_string();
+                let original_val = self.state.original_rows[row_ix][pk_col_ix]
+                    .as_deref()
+                    .map(|v| v.to_string());
                 let col_type = self.state.columns[pk_col_ix]
                     .declared_type
                     .clone()

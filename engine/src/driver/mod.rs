@@ -4,7 +4,9 @@ pub mod sqlite;
 use crate::database_config::{DatabaseConfig, DatabaseKind};
 use crate::error::EngineError;
 use crate::result::QueryResult;
-use crate::schema::{DataChangeset, DatabaseBrief, SchemaBrief, TableBrief, TableInfo};
+use crate::schema::{
+    DataChangeset, DataTypeCategory, DatabaseBrief, SchemaBrief, TableBrief, TableInfo,
+};
 use crate::{ColumnInfo, ForeignKeyInfo, IndexInfo, PrimaryKey};
 
 /// Cung cấp các quy tắc định dạng SQL (Dialect) cho từng loại Database
@@ -20,7 +22,7 @@ pub trait SqlDialect {
     fn quote_identifier(&self, identifier: &str) -> String;
 
     /// Định dạng giá trị dựa trên kiểu dữ liệu
-    fn format_value(&self, value: &str, data_type: &str) -> String;
+    fn format_value(&self, value: Option<&str>, data_type: DataTypeCategory) -> String;
 }
 
 /// Trait đại diện cho một database driver.
@@ -66,10 +68,11 @@ pub trait DatabaseDriver: SqlDialect + Send + Sync {
                 .changes
                 .iter()
                 .map(|c| {
+                    let data_type = self.data_type_categorize(&c.data_type);
                     format!(
                         "{} = {}",
                         self.quote_identifier(&c.column_name),
-                        self.format_value(&c.value, &c.data_type)
+                        self.format_value(c.value.as_deref(), data_type)
                     )
                 })
                 .collect::<Vec<_>>()
@@ -79,10 +82,11 @@ pub trait DatabaseDriver: SqlDialect + Send + Sync {
                 .pk_conditions
                 .iter()
                 .map(|c| {
+                    let data_type = self.data_type_categorize(&c.data_type);
                     format!(
                         "{} = {}",
                         self.quote_identifier(&c.column_name),
-                        self.format_value(&c.value, &c.data_type)
+                        self.format_value(c.value.as_deref(), data_type)
                     )
                 })
                 .collect::<Vec<_>>()
@@ -101,10 +105,11 @@ pub trait DatabaseDriver: SqlDialect + Send + Sync {
                 .pk_conditions
                 .iter()
                 .map(|c| {
+                    let data_type = self.data_type_categorize(&c.data_type);
                     format!(
                         "{} = {}",
                         self.quote_identifier(&c.column_name),
-                        self.format_value(&c.value, &c.data_type)
+                        self.format_value(c.value.as_deref(), data_type)
                     )
                 })
                 .collect::<Vec<_>>()
@@ -127,7 +132,10 @@ pub trait DatabaseDriver: SqlDialect + Send + Sync {
             let values = insert
                 .values
                 .iter()
-                .map(|c| self.format_value(&c.value, &c.data_type))
+                .map(|c| {
+                    let data_type = self.data_type_categorize(&c.data_type);
+                    self.format_value(c.value.as_deref(), data_type)
+                })
                 .collect::<Vec<_>>()
                 .join(", ");
             script.push_str(&format!(
@@ -240,6 +248,12 @@ pub trait DatabaseDriver: SqlDialect + Send + Sync {
         }
         Ok(())
     }
+
+    /// Phân loại kiểu dữ liệu SQL → DataTypeCategory.
+    ///
+    /// Mỗi driver override để map kiểu riêng của database.
+    /// Ví dụ: SQLite có "TEXT", PostgreSQL có "VARCHAR" — cả hai → Text.
+    fn data_type_categorize(&self, data_type: &str) -> DataTypeCategory;
 }
 
 /// Entry point duy nhất để tạo driver mới.

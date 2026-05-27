@@ -12,14 +12,14 @@ pub struct EditingState {
 #[derive(Clone)]
 pub struct GridState {
     pub columns: Vec<Column>,
-    pub original_rows: Vec<Vec<SharedString>>,
+    pub original_rows: Vec<Vec<Option<SharedString>>>,
 
     pub source_table: Option<SharedString>,
     pub primary_keys: Vec<String>,
 
-    pub pending_edits: HashMap<(usize, usize), String>,
+    pub pending_edits: HashMap<(usize, usize), Option<SharedString>>,
     pub pending_deletes: HashSet<usize>,
-    pub pending_inserts: Vec<Vec<String>>,
+    pub pending_inserts: Vec<Vec<Option<SharedString>>>,
 
     pub limit: usize,
     pub offset: usize,
@@ -87,10 +87,10 @@ impl GridState {
     }
 
     /// Lấy text của một cell (ưu tiên pending_edits > pending_inserts > original)
-    pub fn cell_value(&self, row_ix: usize, col_ix: usize) -> String {
+    pub fn cell_value(&self, row_ix: usize, col_ix: usize) -> Option<SharedString> {
         // Pending edit (cả original lẫn inserted đều có thể có)
-        if let Some(val) = self.pending_edits.get(&(row_ix, col_ix)) {
-            return val.clone();
+        if let Some(editing_value) = self.pending_edits.get(&(row_ix, col_ix)) {
+            return editing_value.clone();
         }
 
         if self.is_inserted_row(row_ix) {
@@ -100,13 +100,18 @@ impl GridState {
                 .get(ix)
                 .and_then(|row| row.get(col_ix))
                 .cloned()
-                .unwrap_or_default();
+                .flatten();
         }
 
+        self.cell_original_value(row_ix, col_ix)
+    }
+
+    /// Lấy giá trị gốc của một cell (không bao gồm pending edits)
+    pub fn cell_original_value(&self, row_ix: usize, col_ix: usize) -> Option<SharedString> {
         self.original_rows
             .get(row_ix)
             .and_then(|row| row.get(col_ix))
-            .map(|s| s.to_string())
-            .unwrap_or_default()
+            .cloned()
+            .flatten()
     }
 }

@@ -8,23 +8,6 @@ use gpui_component::input::InputState;
 use gpui_component::table::{DataTable, TableDelegate, TableEvent, TableState};
 use gpui_component::{ActiveTheme, Disableable, Icon, Sizable, h_flex, v_flex};
 
-/// TODO: Nên chuyển cái hàm này sang chỗ khác
-fn validate_sql_type(text: &str, data_type: &str) -> bool {
-    let data_type = data_type.to_uppercase();
-    if data_type.contains("INT") || data_type.contains("BOOL") {
-        text.parse::<i64>().is_ok()
-    } else if data_type.contains("REAL")
-        || data_type.contains("FLOAT")
-        || data_type.contains("DOUBLE")
-        || data_type.contains("DECIMAL")
-        || data_type.contains("NUMERIC")
-    {
-        text.parse::<f64>().is_ok()
-    } else {
-        true
-    }
-}
-
 /// View độc lập quản lý hiển thị và tương tác dữ liệu dạng bảng.
 pub struct SmartDataGrid {
     pub client: SqlClient,
@@ -134,7 +117,11 @@ impl SmartDataGrid {
             return;
         }
 
-        let current_value = delegate.cell_text(row_ix, col_ix, cx);
+        let current_value = delegate.state.cell_value(row_ix, col_ix);
+        let current_value = match current_value {
+            Some(val) => val.to_string(),
+            None => String::new(),
+        };
 
         self.cell_editor.update(cx, |input, cx| {
             input.set_value(current_value, window, cx);
@@ -167,38 +154,46 @@ impl SmartDataGrid {
                 None => return Err(StageError::NoActiveEdit),
             };
 
-            let value = self.cell_editor.read(cx).value().to_string();
+            let text = self.cell_editor.read(cx).value().to_string();
             let col_type = state.columns[c].declared_type.clone().unwrap_or_default();
+            let data_type_category = self.client.data_type_categorize(&col_type);
 
-            if !validate_sql_type(&value, &col_type) {
-                state.editing_state.as_mut().unwrap().has_error = true;
-                self.cell_editor.update(cx, |ed, cx| ed.focus(window, cx));
-                cx.notify();
-                return Err(StageError::InvalidData(format!(
-                    "Giá trị '{}' không đúng định dạng {}",
-                    value, col_type
-                )));
+            let new_value: Option<SharedString> = match text.is_empty() {
+                true => data_type_category
+                    .allows_empty_string()
+                    .then_some(SharedString::from("")),
+                false => {
+                    if !data_type_category.validate(&text) {
+                        state.editing_state.as_mut().unwrap().has_error = true;
+                        self.cell_editor.update(cx, |ed, cx| ed.focus(window, cx));
+                        cx.notify();
+                        return Err(StageError::InvalidData(format!(
+                            "Giá trị '{}' không đúng định dạng {}",
+                            text, col_type
+                        )));
+                    }
+                    Some(SharedString::from(text))
+                }
+            };
+
+            match state.is_inserted_row(r) {
+                true => {
+                    let insert_index = state.insert_index(r);
+                    state
+                        .pending_inserts
+                        .get_mut(insert_index)
+                        .and_then(|row| row.get_mut(c))
+                        .map(|cell| *cell = new_value);
+                }
+                false => {
+                    let original = state.cell_original_value(r, c);
+                    match new_value == original {
+                        true => state.pending_edits.remove(&(r, c)),
+                        false => state.pending_edits.insert((r, c), new_value),
+                    };
+                }
             }
 
-            if state.is_inserted_row(r) {
-                let insert_index = state.insert_index(r);
-                state
-                    .pending_inserts
-                    .get_mut(insert_index)
-                    .and_then(|row| row.get_mut(c))
-                    .map(|cell| *cell = value);
-
-                state.editing_state = None;
-                cx.notify();
-                return Ok((r, c));
-            }
-
-            let original = state.cell_value(r, c);
-            if value == original {
-                state.pending_edits.remove(&(r, c));
-            } else {
-                state.pending_edits.insert((r, c), value);
-            }
             state.editing_state = None;
             cx.notify();
             Ok((r, c))
@@ -207,14 +202,14 @@ impl SmartDataGrid {
 
     /// Cập nhật dữ liệu gốc cho Grid
     pub fn set_data(&mut self, columns: Vec<Column>, rows: Vec<Row>, cx: &mut Context<Self>) {
-        let cached_rows: Vec<Vec<SharedString>> = rows
+        let cached_rows: Vec<Vec<Option<SharedString>>> = rows
             .into_iter()
             .map(|row| {
                 row.values
                     .into_iter()
                     .map(|val| match val {
-                        Some(v) => v.to_string().into(),
-                        None => "NULL".into(),
+                        Some(v) => Some(v.to_string().into()),
+                        None => None,
                     })
                     .collect()
             })
@@ -222,8 +217,8 @@ impl SmartDataGrid {
 
         self.table.update(cx, |table, cx| {
             let delegate = table.delegate_mut();
-            delegate.state.columns = columns;
             delegate.state.original_rows = cached_rows;
+            delegate.state.columns = columns;
             delegate.state.pending_edits.clear();
             delegate.state.pending_deletes.clear();
             delegate.state.pending_inserts.clear();
@@ -392,10 +387,7 @@ impl SmartDataGrid {
             if col_count == 0 {
                 return;
             }
-            delegate
-                .state
-                .pending_inserts
-                .push(vec![String::new(); col_count]);
+            delegate.state.pending_inserts.push(vec![None; col_count]);
             cx.notify();
         });
     }

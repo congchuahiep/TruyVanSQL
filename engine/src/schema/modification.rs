@@ -1,7 +1,7 @@
 #[derive(Debug, Clone)]
 pub struct ColumnData {
     pub column_name: String,
-    pub value: String,
+    pub value: Option<String>,
     pub data_type: String,
 }
 

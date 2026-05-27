@@ -8,8 +8,8 @@ use crate::driver::{DatabaseDriver, SqlDialect};
 use crate::error::EngineError;
 use crate::result::{Column, QueryResult, Row as ResultRow, Value};
 use crate::schema::{
-    ColumnInfo, DatabaseBrief, ForeignKeyInfo, IndexInfo, PrimaryKey, SchemaBrief, SchemaKind,
-    TableBrief, TableKind,
+    ColumnInfo, DataTypeCategory, DatabaseBrief, ForeignKeyInfo, IndexInfo, SchemaBrief,
+    SchemaKind, TableBrief, TableKind,
 };
 use crate::{DatabaseKind, NetworkDbConfig};
 
@@ -54,30 +54,17 @@ impl SqlDialect for PostgresDriver {
         format!("\"{}\"", identifier)
     }
 
-    fn format_value(&self, value: &str, data_type: &str) -> String {
-        if value == "NULL" {
-            return "NULL".into();
+    fn format_value(&self, value: Option<&str>, data_type: DataTypeCategory) -> String {
+        match value {
+            Some(value) => match data_type {
+                DataTypeCategory::Integer | DataTypeCategory::Float | DataTypeCategory::Boolean => {
+                    value.into()
+                }
+                DataTypeCategory::Binary => format!("\\x{}", value),
+                _ => format!("'{}'", value.replace("'", "''")),
+            },
+            None => "NULL".into(),
         }
-        let dt = data_type.to_uppercase();
-        if dt.contains("INT")
-            || dt.contains("SERIAL")
-            || dt.contains("REAL")
-            || dt.contains("FLOAT")
-            || dt.contains("DOUBLE")
-            || dt.contains("NUMERIC")
-            || dt.contains("DECIMAL")
-        {
-            if value
-                .chars()
-                .all(|c| c.is_digit(10) || c == '.' || c == '-')
-            {
-                return value.into();
-            }
-        }
-        if dt == "BOOLEAN" || dt == "BOOL" {
-            return value.into();
-        }
-        format!("'{}'", value.replace("'", "''"))
     }
 }
 
@@ -442,6 +429,32 @@ impl DatabaseDriver for PostgresDriver {
         }
 
         Ok(indexes)
+    }
+
+    fn data_type_categorize(&self, data_type: &str) -> DataTypeCategory {
+        let dt = data_type.to_uppercase();
+        if dt.contains("CHAR") || dt.contains("VARCHAR") || dt.contains("TEXT") {
+            DataTypeCategory::Text
+        } else if dt.contains("SERIAL") || dt.contains("INT") {
+            DataTypeCategory::Integer
+        } else if dt.contains("REAL")
+            || dt.contains("FLOAT")
+            || dt.contains("DOUBLE")
+            || dt.contains("NUMERIC")
+            || dt.contains("DECIMAL")
+        {
+            DataTypeCategory::Float
+        } else if dt.contains("BOOL") {
+            DataTypeCategory::Boolean
+        } else if dt.contains("DATE") || dt.contains("TIME") || dt.contains("INTERVAL") {
+            DataTypeCategory::DateTime
+        } else if dt.contains("BYTEA") || dt.contains("BLOB") {
+            DataTypeCategory::Binary
+        } else if dt.contains("UUID") {
+            DataTypeCategory::Uuid
+        } else {
+            DataTypeCategory::Unknown
+        }
     }
 }
 
