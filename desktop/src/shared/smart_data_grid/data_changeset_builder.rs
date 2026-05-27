@@ -1,6 +1,5 @@
 use crate::shared::smart_data_grid::grid_state::GridState;
 use engine::{ColumnData, DataChangeset, RowDelete, RowInsert, RowUpdate};
-use gpui::SharedString;
 use std::collections::HashMap;
 use thiserror::Error;
 

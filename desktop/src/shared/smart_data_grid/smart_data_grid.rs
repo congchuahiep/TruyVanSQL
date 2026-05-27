@@ -244,6 +244,7 @@ impl SmartDataGrid {
         });
     }
 
+    /// Refresh lại 
     fn on_refresh(&mut self, _: &ClickEvent, _window: &mut Window, _cx: &mut Context<Self>) {
         println!("SmartDataGrid: Đã bấm nút Refresh");
     }
@@ -280,6 +281,7 @@ impl SmartDataGrid {
         }
     }
 
+    /// Lưu các thay đổi xuống dưới database thực tế
     fn on_commit_changes(
         &mut self,
         _: &crate::action::datagrid::CommitChanges,
@@ -557,41 +559,43 @@ impl Render for SmartDataGrid {
                     .overflow_hidden()
                     .font_family(cx.theme().mono_font_family.clone())
                     // Hiển thị error view
-                    .when_some(state.error.as_ref(), |this, error| {
-                        this.child(
-                            v_flex().size_full().items_center().justify_center().child(
-                                v_flex()
-                                    .items_center()
-                                    .gap_2()
-                                    .max_w_128()
-                                    .px_12()
-                                    .child(
-                                        div()
-                                            .line_height(px(24.))
-                                            .text_xl()
-                                            .text_color(cx.theme().danger_foreground)
-                                            .child(
-                                                Icon::new(AppIcon::TriangleWarningFill)
-                                                    .with_size(px(32.)),
-                                            ),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_sm()
-                                            .text_color(cx.theme().muted_foreground)
-                                            .child(error.clone()),
-                                    ),
-                            ),
-                        )
-                    })
-                    // Hiển thị data grid chính
-                    .when(state.error.is_none(), |this| {
-                        this.child(
-                            DataTable::new(&self.table)
-                                .bordered(false)
-                                .scrollbar_visible(true, true),
-                        )
-                    }),
+                    .when_else(
+                        state.error.is_fatal(),
+                        |this| {
+                            this.child(
+                                v_flex().size_full().items_center().justify_center().child(
+                                    v_flex()
+                                        .items_center()
+                                        .gap_2()
+                                        .max_w_128()
+                                        .px_12()
+                                        .child(
+                                            div()
+                                                .line_height(px(24.))
+                                                .text_xl()
+                                                .text_color(cx.theme().danger_foreground)
+                                                .child(
+                                                    Icon::new(AppIcon::TriangleWarningFill)
+                                                        .with_size(px(32.)),
+                                                ),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_sm()
+                                                .text_color(cx.theme().muted_foreground)
+                                                .child(state.error.message()),
+                                        ),
+                                ),
+                            )
+                        },
+                        |this| {
+                            this.child(
+                                DataTable::new(&self.table)
+                                    .bordered(false)
+                                    .scrollbar_visible(true, true),
+                            )
+                        },
+                    ),
             )
     }
 }

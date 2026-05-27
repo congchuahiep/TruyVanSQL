@@ -5,7 +5,7 @@ use gpui_component::v_flex;
 use std::any::Any;
 
 use crate::panel::{TabInfo, TabItem};
-use crate::shared::smart_data_grid::SmartDataGrid;
+use crate::shared::smart_data_grid::{GridError, SmartDataGrid};
 
 /// Tab chuyên dụng để hiển thị toàn màn hình DataGrid (Table Viewer)
 pub struct TableViewerTab {
@@ -61,7 +61,7 @@ impl TableViewerTab {
                     grid.set_metadata(Some(table_name.clone()), pks, cx);
                 } else if let Err(e) = result {
                     grid.table.update(cx, |table, _cx| {
-                        table.delegate_mut().state.error = Some(e.to_string().into());
+                        table.delegate_mut().state.error = GridError::Fatal(e.to_string().into());
                     });
                     eprintln!("{}", e);
                 }
