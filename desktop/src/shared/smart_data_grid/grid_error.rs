@@ -15,6 +15,8 @@ pub enum StageError {
 pub enum GridError {
     /// Lỗi nghiêm trọng (không load được bảng)
     Fatal(SharedString),
+    /// Lỗi xảy ra khi refresh không thành công
+    Refresh(SharedString),
     /// Lỗi commit changes
     Commit(SharedString),
     /// Không bị gì cả
@@ -30,7 +32,7 @@ impl GridError {
     /// Lấy message từ GridError. Trả về chuỗi rỗng nếu None.
     pub fn message(&self) -> SharedString {
         match self {
-            GridError::Fatal(msg) | GridError::Commit(msg) => msg.clone(),
+            GridError::Fatal(msg) | GridError::Refresh(msg) | GridError::Commit(msg) => msg.clone(),
             GridError::None => SharedString::new(""),
         }
     }

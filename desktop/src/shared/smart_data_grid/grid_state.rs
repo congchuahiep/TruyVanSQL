@@ -4,18 +4,11 @@ use gpui::SharedString;
 use std::collections::{HashMap, HashSet};
 
 #[derive(Clone)]
-pub struct EditingState {
-    pub row: usize,
-    pub col: usize,
-    pub has_error: bool,
-}
-
-#[derive(Clone)]
 pub struct GridState {
     pub columns: Vec<Column>,
     pub original_rows: Vec<Vec<Option<SharedString>>>,
 
-    pub source_table: Option<SharedString>,
+    pub data_source: GridDataSource,
     pub primary_keys: Vec<String>,
 
     pub pending_edits: HashMap<(usize, usize), Option<SharedString>>,
@@ -32,11 +25,11 @@ pub struct GridState {
 }
 
 impl GridState {
-    pub fn new() -> Self {
+    pub fn new(data_source: GridDataSource) -> Self {
         Self {
             columns: Vec::new(),
             original_rows: Vec::new(),
-            source_table: None,
+            data_source,
             primary_keys: Vec::new(),
             pending_edits: HashMap::new(),
             pending_deletes: HashSet::new(),
@@ -65,9 +58,38 @@ impl GridState {
         row_ix - self.original_len()
     }
 
+    /// Lấy tên bảng nguồn của grid (nếu có)
+    pub fn source_table(&self) -> Option<SharedString> {
+        match &self.data_source {
+            GridDataSource::Table { source_table } => Some(source_table.clone()),
+            GridDataSource::Query { source_table, .. } => source_table.clone(),
+        }
+    }
+
+    /// Kiểm tra xem có thể phân trang hay không
+    pub fn can_paginate(&self) -> bool {
+        matches!(self.data_source, GridDataSource::Table { .. })
+    }
+
+    /// Kiểm tra xem có thể thêm dòng mới vào grid hay không
+    ///
+    /// TODO: Query hoàn toàn có thể insert theo một trường hợp nào đó
+    pub fn can_insert(&self) -> bool {
+        matches!(self.data_source, GridDataSource::Table { .. })
+    }
+
     /// Kiểm tra xem grid có thể chỉnh sửa không (có source_table và primary_keys)
-    pub fn is_editable(&self) -> bool {
-        self.source_table.is_some() && !self.primary_keys.is_empty()
+    pub fn can_edit(&self) -> bool {
+        match &self.data_source {
+            GridDataSource::Table { .. } => !self.primary_keys.is_empty(),
+            GridDataSource::Query {
+                source_table: Some(_),
+                ..
+            } => !self.primary_keys.is_empty(),
+            GridDataSource::Query {
+                source_table: None, ..
+            } => false,
+        }
     }
 
     /// Row này có bị đánh dấu xóa không?
@@ -115,4 +137,22 @@ impl GridState {
             .cloned()
             .flatten()
     }
+}
+
+#[derive(Clone)]
+pub struct EditingState {
+    pub row: usize,
+    pub col: usize,
+    pub has_error: bool,
+}
+
+#[derive(Clone, Debug)]
+pub enum GridDataSource {
+    /// TableViewer: data từ 1 bảng, có phân trang, thêm dòng
+    Table { source_table: SharedString },
+    /// SQL Editor: data từ query tùy ý, không phân trang
+    Query {
+        source_table: Option<SharedString>,
+        query: SharedString,
+    },
 }

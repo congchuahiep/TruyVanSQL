@@ -212,6 +212,7 @@ pub trait DatabaseDriver: SqlDialect + Send + Sync {
         let primary_key = extract_primary_key(&columns);
         let foreign_keys = self.get_foreign_keys(table_name).await?;
         let indexes = self.get_indexes(table_name).await?;
+
         Ok(TableInfo {
             name: table_name.to_string(),
             columns,
@@ -219,6 +220,11 @@ pub trait DatabaseDriver: SqlDialect + Send + Sync {
             foreign_keys,
             indexes,
         })
+    }
+
+    async fn get_table_primary_keys(&self, table_name: &str) -> Result<PrimaryKey, EngineError> {
+        let columns = self.get_columns(table_name).await?;
+        Ok(extract_primary_key(&columns))
     }
 
     /// Đếm số dòng trong table.

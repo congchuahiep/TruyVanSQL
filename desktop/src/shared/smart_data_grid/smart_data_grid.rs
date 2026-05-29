@@ -1,6 +1,8 @@
+use crate::shared::smart_data_grid::{GridDataSource, GridError};
+
 use super::{DataChangesetBuilder, EditingState, GridDelegate, GridState, StageError};
 use assets::AppIcon;
-use engine::{Column, Row, SqlClient};
+use engine::{Column, QueryResult, Row, SqlClient};
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::button::{Button, ButtonCustomVariant, ButtonVariants};
@@ -18,10 +20,15 @@ pub struct SmartDataGrid {
 }
 
 impl SmartDataGrid {
-    pub fn new(client: SqlClient, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        client: SqlClient,
+        data_source: GridDataSource,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let cell_editor = cx.new(|cx| InputState::new(window, cx));
 
-        let delegate = GridDelegate::new(GridState::new(), cell_editor.clone());
+        let delegate = GridDelegate::new(GridState::new(data_source), cell_editor.clone());
         let table = cx.new(|cx| {
             TableState::new(delegate, window, cx)
                 .row_header(false)
@@ -47,51 +54,142 @@ impl SmartDataGrid {
 
         let focus_handle = cx.focus_handle();
 
-        // Bắt sự kiện từ Table (ví dụ: Double Click để Edit)
         cx.subscribe_in(&table, window, Self::on_table_event)
             .detach();
 
-        Self {
+        let mut this = Self {
             client,
             table,
             cell_editor,
             focus_handle,
             _blur_subscription: blur_sub,
-        }
+        };
+
+        this.load(cx); // Initialize data
+
+        this
     }
 
-    fn on_table_event(
-        &mut self,
-        table: &Entity<TableState<GridDelegate>>,
-        event: &TableEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        match event {
-            TableEvent::DoubleClickedCell(row_ix, col_ix) => {
-                self.activate_editor(*row_ix, *col_ix, window, cx);
-            }
-            TableEvent::SelectCell(row_ix, col_ix) => {
-                // Focus lại editing cell khi giá trị edit hiện tại không hợp lệ
-                if let Some(EditingState {
-                    row,
-                    col,
-                    has_error,
-                }) = self.table.read(cx).delegate().state.editing_state
-                {
-                    table.update(cx, |table, cx| {
-                        table.clear_selection(cx);
-                    });
+    /// Load data từ Database, nó sẽ thực thi truy vấn dựa trên
+    /// `&self.table.read(cx).delegate().state.data_source` và cập nhật lại `table`.
+    ///
+    /// - [`GridDataSource::Table`]: Truy vấn dữ liệu từ bảng cơ sở dữ liệu.
+    /// - [`GridDataSource::Query`]: Truy vấn dữ liệu từ câu lệnh SQL tùy chỉnh.
+    pub fn load(&mut self, cx: &mut Context<Self>) {
+        self.set_loading(true, cx);
 
-                    if row == *row_ix && col == *col_ix && !has_error {
-                        self.cell_editor.update(cx, |input, cx| {
-                            input.focus(window, cx);
+        let client = self.client.clone();
+        let data_source = &self.table.read(cx).delegate().state.data_source;
+        let has_existing_data = !self
+            .table
+            .read(cx)
+            .delegate()
+            .state
+            .original_rows
+            .is_empty();
+
+        let (query, table_name): (String, Option<SharedString>) = match data_source {
+            GridDataSource::Table { source_table } => {
+                let state = &self.table.read(cx).delegate().state;
+                let table_name = source_table.clone();
+                let query = format!(
+                    "SELECT * FROM \"{}\" LIMIT {} OFFSET {}",
+                    table_name, state.limit, state.offset
+                );
+                (query, Some(table_name))
+            }
+            GridDataSource::Query { query, .. } => (query.to_string(), None),
+        };
+
+        cx.spawn(async move |this, cx| {
+            let result = client.execute(&query).await;
+            let table_info = match &table_name {
+                Some(table_name) => Some(client.get_table_info_cached(&table_name).await?),
+                None => None,
+            };
+
+            this.update(cx, |grid, cx| {
+                match result {
+                    Ok(QueryResult::Query { columns, rows }) => {
+                        grid.set_data(columns, rows, cx);
+
+                        table_info.inspect(|table_info| {
+                            grid.set_primary_keys(table_info.primary_key.columns.clone(), cx)
                         });
                     }
-                }
-            }
-            _ => {}
-        }
+                    Ok(QueryResult::Execution { .. }) => {
+                        panic!("Trường hợp này không thể xảy ra >:(")
+                    }
+                    Err(e) => {
+                        // WARN: Cơ chế đúng sẽ là check initial load thì quăng lỗi Fatal (có thể là
+                        // thêm flag nhưng sẽ bị rườm rà), nên là tạm thời làm thế này cũng được
+                        match has_existing_data {
+                            true => grid.set_error(GridError::Refresh(e.to_string().into()), cx),
+                            false => grid.set_error(GridError::Fatal(e.to_string().into()), cx),
+                        }
+                        eprintln!("{}", e);
+                    }
+                };
+                grid.set_loading(false, cx);
+            })
+        })
+        .detach();
+    }
+
+    /// Cập nhật dữ liệu gốc cho Grid
+    pub fn set_data(&mut self, columns: Vec<Column>, rows: Vec<Row>, cx: &mut Context<Self>) {
+        let cached_rows: Vec<Vec<Option<SharedString>>> = rows
+            .into_iter()
+            .map(|row| {
+                row.values
+                    .into_iter()
+                    .map(|val| match val {
+                        Some(v) => Some(v.to_string().into()),
+                        None => None,
+                    })
+                    .collect()
+            })
+            .collect();
+
+        self.table.update(cx, |table, cx| {
+            let delegate = table.delegate_mut();
+            delegate.state.original_rows = cached_rows;
+            delegate.state.columns = columns;
+            delegate.state.pending_edits.clear();
+            delegate.state.pending_deletes.clear();
+            delegate.state.pending_inserts.clear();
+
+            // Cập nhật lại cached_columns trong Delegate
+            *delegate = GridDelegate::new(delegate.state.clone(), self.cell_editor.clone());
+            table.refresh(cx);
+        });
+
+        cx.notify();
+    }
+
+    /// Cấu hình primary keys cho Grid
+    pub fn set_primary_keys(&mut self, primary_keys: Vec<String>, cx: &mut Context<Self>) {
+        self.table.update(cx, |table, _| {
+            let delegate = table.delegate_mut();
+            delegate.state.primary_keys = primary_keys;
+        });
+        cx.notify();
+    }
+
+    /// Đặt trạng thái loading cho Grid
+    pub fn set_loading(&mut self, is_loading: bool, cx: &mut Context<Self>) {
+        self.table.update(cx, |table, _| {
+            table.delegate_mut().state.is_loading = is_loading;
+        });
+        cx.notify();
+    }
+
+    /// Đặt lỗi cho Grid
+    pub fn set_error(&mut self, error: GridError, cx: &mut Context<Self>) {
+        self.table.update(cx, |table, _| {
+            table.delegate_mut().state.error = error;
+        });
+        cx.notify();
     }
 
     /// Kích hoạt chế độ chỉnh sửa cho một ô cụ thể
@@ -105,7 +203,8 @@ impl SmartDataGrid {
         let delegate = self.table.read(cx).delegate();
         let state = &delegate.state;
 
-        if !state.is_editable()
+        if state.is_loading
+            || !state.can_edit()
             || state.editing_state.as_ref().is_some_and(
                 |EditingState {
                      row,
@@ -136,6 +235,7 @@ impl SmartDataGrid {
                 has_error: false,
             });
         });
+        cx.notify();
     }
 
     /// Đánh dấu cell hiện tại trong trạng thái chuẩn bị thay đổi, trước khi được lưu chính thức
@@ -195,58 +295,48 @@ impl SmartDataGrid {
             }
 
             state.editing_state = None;
-            cx.notify();
             Ok((r, c))
         })
     }
 
-    /// Cập nhật dữ liệu gốc cho Grid
-    pub fn set_data(&mut self, columns: Vec<Column>, rows: Vec<Row>, cx: &mut Context<Self>) {
-        let cached_rows: Vec<Vec<Option<SharedString>>> = rows
-            .into_iter()
-            .map(|row| {
-                row.values
-                    .into_iter()
-                    .map(|val| match val {
-                        Some(v) => Some(v.to_string().into()),
-                        None => None,
-                    })
-                    .collect()
-            })
-            .collect();
-
-        self.table.update(cx, |table, cx| {
-            let delegate = table.delegate_mut();
-            delegate.state.original_rows = cached_rows;
-            delegate.state.columns = columns;
-            delegate.state.pending_edits.clear();
-            delegate.state.pending_deletes.clear();
-            delegate.state.pending_inserts.clear();
-
-            // Cập nhật lại cached_columns trong Delegate
-            *delegate = GridDelegate::new(delegate.state.clone(), self.cell_editor.clone());
-            table.refresh(cx);
-        });
-    }
-
-    /// Cấu hình siêu dữ liệu để Grid biết nó có thể Edit được không
-    pub fn set_metadata(
+    fn on_table_event(
         &mut self,
-        source_table: Option<SharedString>,
-        primary_keys: Vec<String>,
+        table: &Entity<TableState<GridDelegate>>,
+        event: &TableEvent,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.table.update(cx, |table, cx| {
-            let delegate = table.delegate_mut();
-            delegate.state.source_table = source_table;
-            delegate.state.primary_keys = primary_keys;
-            cx.notify();
-        });
+        match event {
+            TableEvent::DoubleClickedCell(row_ix, col_ix) => {
+                self.activate_editor(*row_ix, *col_ix, window, cx);
+            }
+            TableEvent::SelectCell(row_ix, col_ix) => {
+                // Focus lại editing cell khi giá trị edit hiện tại không hợp lệ
+                if let Some(EditingState {
+                    row,
+                    col,
+                    has_error,
+                }) = self.table.read(cx).delegate().state.editing_state
+                {
+                    table.update(cx, |table, cx| {
+                        table.clear_selection(cx);
+                    });
+
+                    if row == *row_ix && col == *col_ix && !has_error {
+                        self.cell_editor.update(cx, |input, cx| {
+                            input.focus(window, cx);
+                        });
+                    }
+                }
+                cx.notify();
+            }
+            _ => {}
+        }
     }
 
-    /// Refresh lại 
-    fn on_refresh(&mut self, _: &ClickEvent, _window: &mut Window, _cx: &mut Context<Self>) {
-        println!("SmartDataGrid: Đã bấm nút Refresh");
+    /// Refresh lại data grid
+    fn on_refresh(&mut self, _: &ClickEvent, _window: &mut Window, cx: &mut Context<Self>) {
+        self.load(cx);
     }
 
     /// Copy cell hoặc row đang selected vào clipboard.
@@ -308,6 +398,7 @@ impl SmartDataGrid {
     ) {
         if let Some((r, c)) = self.table.read(cx).selected_cell() {
             self.activate_editor(r, c, window, cx);
+            cx.notify();
         }
     }
 
@@ -326,6 +417,7 @@ impl SmartDataGrid {
             }
             Err(error) => eprintln!("Enter key error: {error}"),
         };
+        cx.notify();
     }
 
     fn on_cancel_edit(
@@ -342,6 +434,7 @@ impl SmartDataGrid {
             table.focus_handle(cx).focus(window, cx);
             table.delegate_mut().state.editing_state = None;
         });
+        cx.notify();
     }
 
     /// Xóa dòng đã chọn, hoặc dòng chứa ô đã chọn nếu không có dòng nào được chọn
@@ -351,29 +444,28 @@ impl SmartDataGrid {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.table.update(cx, |table, cx| {
-            let selected_row = if let Some(row_ix) = table.selected_row() {
-                row_ix
-            } else if let Some((row_ix, _)) = table.selected_cell() {
-                row_ix
-            } else {
-                return; // Không làm gì cả nếu không select được row nào
+        self.table.update(cx, |table, _| {
+            let selected_row = match (table.selected_row(), table.selected_cell()) {
+                (Some(row_ix), _) => row_ix,
+                (_, Some((row_ix, _))) => row_ix,
+                _ => return, // Không làm gì cả nếu cả hai đều là None
             };
 
-            let delegate = table.delegate_mut();
-            let state = &mut delegate.state;
-            if state.is_inserted_row(selected_row) {
-                let ix = state.insert_index(selected_row);
-                state.pending_inserts.remove(ix);
-            } else {
-                if state.pending_deletes.contains(&selected_row) {
+            let state = &mut table.delegate_mut().state;
+            match state.is_inserted_row(selected_row) {
+                true => {
+                    let ix = state.insert_index(selected_row);
+                    state.pending_inserts.remove(ix);
+                }
+                false if state.pending_deletes.contains(&selected_row) => {
                     state.pending_deletes.remove(&selected_row);
-                } else {
+                }
+                false => {
                     state.pending_deletes.insert(selected_row);
                 }
             }
-            cx.notify();
         });
+        cx.notify();
     }
 
     /// Thêm một dòng mới vào cuối bảng
@@ -383,15 +475,15 @@ impl SmartDataGrid {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.table.update(cx, |table, cx| {
-            let delegate = table.delegate_mut();
-            let col_count = delegate.state.columns.len();
+        self.table.update(cx, |table, _| {
+            let state = &mut table.delegate_mut().state;
+            let col_count = state.columns.len();
             if col_count == 0 {
                 return;
             }
-            delegate.state.pending_inserts.push(vec![None; col_count]);
-            cx.notify();
+            state.pending_inserts.push(vec![None; col_count]);
         });
+        cx.notify();
     }
 
     fn on_discard_changes(
@@ -400,21 +492,21 @@ impl SmartDataGrid {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.table.update(cx, |table, cx| {
-            let delegate = table.delegate_mut();
-            delegate.state.pending_edits.clear();
-            delegate.state.pending_deletes.clear();
-            delegate.state.pending_inserts.clear();
-            delegate.state.editing_state = None;
-            cx.notify();
+        self.table.update(cx, |table, _| {
+            let state = &mut table.delegate_mut().state;
+            state.pending_edits.clear();
+            state.pending_deletes.clear();
+            state.pending_inserts.clear();
+            state.editing_state = None;
         });
+        cx.notify();
     }
 
     fn render_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let delegate = self.table.read(cx).delegate();
         let state = &delegate.state;
 
-        let is_editable = state.is_editable();
+        let is_editable = state.can_edit();
         let has_changes = state.has_pending_changes();
         let is_loading = state.is_loading;
 
@@ -535,6 +627,7 @@ impl SmartDataGrid {
 impl Render for SmartDataGrid {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.table.read(cx).delegate().state.clone();
+        let is_loading = state.is_loading;
 
         v_flex()
             .key_context("data-grid-container")
@@ -558,6 +651,7 @@ impl Render for SmartDataGrid {
                     .min_h_0()
                     .overflow_hidden()
                     .font_family(cx.theme().mono_font_family.clone())
+                    .when(is_loading, |this| this.opacity(0.5))
                     // Hiển thị error view
                     .when_else(
                         state.error.is_fatal(),

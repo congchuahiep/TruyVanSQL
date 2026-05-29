@@ -23,7 +23,7 @@ impl<'a> DataChangesetBuilder<'a> {
     pub fn build_changeset(&self) -> Result<DataChangeset, DataChangesetError> {
         let table_name = self
             .state
-            .source_table
+            .source_table()
             .as_deref()
             .ok_or(DataChangesetError::TableUndefinded)?
             .to_string();
