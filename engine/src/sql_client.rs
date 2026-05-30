@@ -1,6 +1,10 @@
+use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::Arc;
 
+use tokio::sync::RwLock;
+
+use crate::TableInfo;
 use crate::database_config::DatabaseConfig;
 use crate::driver::{self, DatabaseDriver};
 use crate::error::EngineError;
@@ -19,7 +23,7 @@ use crate::error::EngineError;
 /// so `.clone()` only increments an atomic reference count (~1ns). The underlying
 /// database connection, socket, and driver state are **shared**, not duplicated.
 ///
-/// ```text
+/// ```
 /// let client1 = SqlClient::connect(config).await?;  // 1-10ms (real I/O)
 /// let client2 = client1.clone();                    // ~1ns (Arc clone)
 /// let client3 = client1.clone();                    // ~1ns (Arc clone)
@@ -53,7 +57,11 @@ use crate::error::EngineError;
 /// ```
 #[derive(Clone)]
 pub struct SqlClient {
+    /// Driver của database, cung cấp các phương thức để tương tác với database.
     driver: Arc<dyn DatabaseDriver>,
+
+    /// Cache của schema, lưu trữ thông tin về các table đã được lấy từ database.
+    schema_cache: Arc<RwLock<HashMap<String, Arc<TableInfo>>>>,
 }
 
 impl Deref for SqlClient {
@@ -78,6 +86,7 @@ impl SqlClient {
         let driver = driver::create(&config).await?;
         Ok(Self {
             driver: Arc::from(driver),
+            schema_cache: Arc::new(RwLock::new(HashMap::new())),
         })
     }
 
@@ -92,6 +101,48 @@ impl SqlClient {
 
     /// This funtion do absolutely nothing
     pub fn do_nothing(&self) {}
+}
+
+/// Triển khai các phương thức liên quan tới cache
+impl SqlClient {
+    /// Lấy TableInfo với cache. Cache hit → return ngay không query DB.
+    pub async fn get_table_info_cached(
+        &self,
+        table_name: &str,
+    ) -> Result<Arc<TableInfo>, EngineError> {
+        // 1. Check cache (read lock — cheap)
+        {
+            let cache = self.schema_cache.read().await;
+            if let Some(info) = cache.get(table_name) {
+                println!("Cache hit: {}", table_name);
+                return Ok(Arc::clone(info));
+            }
+        }
+
+        // 2. Cache miss → fetch from DB
+        println!("Cache miss: {}", table_name);
+        let table_info = Arc::new(self.get_table_info(table_name).await?);
+
+        // 3. Store in cache (write lock)
+        {
+            let mut cache = self.schema_cache.write().await;
+            cache
+                .entry(table_name.to_string())
+                .or_insert_with(|| Arc::clone(&table_info));
+        }
+        Ok(table_info)
+    }
+
+    /// Invalidate cache cho 1 table
+    pub async fn invalidate_cache(&self, table_name: &str) {
+        let mut cache = self.schema_cache.write().await;
+        cache.remove(table_name);
+    }
+    /// Invalidate toàn bộ cache
+    pub async fn invalidate_cache_all(&self) {
+        let mut cache = self.schema_cache.write().await;
+        cache.clear();
+    }
 }
 
 #[cfg(test)]

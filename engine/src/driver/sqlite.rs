@@ -3,12 +3,12 @@ use std::time::Duration;
 use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
 use sqlx::{Column as SqlxColumn, Executor, Row, Statement, TypeInfo};
 
-use crate::driver::{DatabaseDriver, SqlDialect, extract_primary_key};
+use crate::driver::{DatabaseDriver, SqlDialect};
 use crate::error::EngineError;
 use crate::result::{Column, QueryResult, Row as ResultRow, Value};
 use crate::schema::{
-    ColumnInfo, DatabaseBrief, ForeignKeyInfo, IndexInfo, PrimaryKey, SchemaBrief, SchemaKind,
-    TableBrief, TableInfo, TableKind,
+    ColumnInfo, DataTypeCategory, DatabaseBrief, ForeignKeyInfo, IndexInfo, SchemaBrief,
+    SchemaKind, TableBrief, TableKind,
 };
 use crate::{DatabaseConfig, FileDbConfig};
 
@@ -56,20 +56,16 @@ impl SqlDialect for SqliteDriver {
         format!("\"{}\"", identifier)
     }
 
-    fn format_value(&self, value: &str, data_type: &str) -> String {
-        if value == "NULL" {
-            "NULL".into()
-        } else {
-            let dt = data_type.to_uppercase();
-            if (dt.contains("INT") || dt.contains("REAL") || dt.contains("FLOAT"))
-                && value
-                    .chars()
-                    .all(|c| c.is_digit(10) || c == '.' || c == '-')
-            {
-                value.into()
-            } else {
-                format!("'{}'", value.replace("'", "''"))
-            }
+    fn format_value(&self, value: Option<&str>, data_type: DataTypeCategory) -> String {
+        match value {
+            Some(value) => match data_type {
+                DataTypeCategory::Integer | DataTypeCategory::Float | DataTypeCategory::Boolean => {
+                    value.into()
+                }
+                DataTypeCategory::Binary => format!("X'{}", value),
+                _ => format!("'{}'", value.replace("'", "''")),
+            },
+            None => "NULL".into(),
         }
     }
 }
@@ -384,6 +380,26 @@ impl DatabaseDriver for SqliteDriver {
 
         Ok(indexes)
     }
+
+    fn data_type_categorize(&self, data_type: &str) -> DataTypeCategory {
+        let dt = data_type.to_uppercase();
+        // SQLite storage affinities: TEXT, NUMERIC, INTEGER, REAL, BLOB
+        if dt.contains("CHAR") || dt.contains("CLOB") || dt.contains("TEXT") {
+            DataTypeCategory::Text
+        } else if dt.contains("INT") {
+            DataTypeCategory::Integer
+        } else if dt.contains("REAL") || dt.contains("FLOA") || dt.contains("DOUB") {
+            DataTypeCategory::Float
+        } else if dt.contains("BOOL") {
+            DataTypeCategory::Boolean
+        } else if dt.contains("BLOB") {
+            DataTypeCategory::Binary
+        } else if dt.contains("DATE") || dt.contains("TIME") {
+            DataTypeCategory::DateTime
+        } else {
+            DataTypeCategory::Unknown
+        }
+    }
 }
 
 /// Convert một `sqlx::SqliteRow` thành `result::Row`.
@@ -414,7 +430,7 @@ fn convert_value(row: &sqlx::sqlite::SqliteRow, idx: usize) -> Option<Value> {
 mod tests {
     use super::*;
     use crate::{
-        DataChangeset, FileDbConfig,
+        DataChangeset, FileDbConfig, RowInsert,
         schema::{ColumnData, RowDelete, RowUpdate},
     };
 
@@ -896,19 +912,26 @@ mod tests {
             updates: vec![RowUpdate {
                 pk_conditions: vec![ColumnData {
                     column_name: "id".to_string(),
-                    value: "1".to_string(),
+                    value: Some("1".to_string()),
                     data_type: "INTEGER".to_string(),
                 }],
                 changes: vec![ColumnData {
                     column_name: "name".to_string(),
-                    value: "Alice O'Neil".to_string(),
+                    value: Some("Alice O'Neil".to_string()),
                     data_type: "TEXT".to_string(),
                 }],
             }],
             deletes: vec![RowDelete {
                 pk_conditions: vec![ColumnData {
                     column_name: "id".to_string(),
-                    value: "2".to_string(),
+                    value: Some("2".to_string()),
+                    data_type: "INTEGER".to_string(),
+                }],
+            }],
+            inserts: vec![RowInsert {
+                values: vec![ColumnData {
+                    column_name: "id".to_string(),
+                    value: Some("3".to_string()),
                     data_type: "INTEGER".to_string(),
                 }],
             }],

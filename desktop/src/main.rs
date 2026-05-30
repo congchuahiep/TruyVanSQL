@@ -50,7 +50,7 @@ async fn main() {
                         height: px(480.0),
                     }),
                     titlebar: Some(TitlebarOptions {
-                        title: None,
+                        title: Some("TruyVanSQL".into()),
                         appears_transparent: true,
                         traffic_light_position: Some(point(px(9.0), px(9.0))),
                     }),

@@ -1,7 +1,7 @@
 #[derive(Debug, Clone)]
 pub struct ColumnData {
     pub column_name: String,
-    pub value: String,
+    pub value: Option<String>,
     pub data_type: String,
 }
 
@@ -17,8 +17,14 @@ pub struct RowDelete {
 }
 
 #[derive(Debug, Clone)]
+pub struct RowInsert {
+    pub values: Vec<ColumnData>,
+}
+
+#[derive(Debug, Clone)]
 pub struct DataChangeset {
     pub table_name: String,
     pub updates: Vec<RowUpdate>,
     pub deletes: Vec<RowDelete>,
+    pub inserts: Vec<RowInsert>,
 }

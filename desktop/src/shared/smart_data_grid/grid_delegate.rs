@@ -3,6 +3,7 @@ use crate::shared::smart_data_grid::EditingState;
 use super::grid_state::GridState;
 use gpui::prelude::FluentBuilder;
 use gpui::*;
+use gpui_component::ActiveTheme;
 use gpui_component::input::Input;
 use gpui_component::input::InputState;
 use gpui_component::table::{Column as GpuiColumn, TableDelegate, TableState};
@@ -42,11 +43,35 @@ impl TableDelegate for GridDelegate {
     }
 
     fn rows_count(&self, _: &App) -> usize {
-        self.state.original_rows.len() // Tương lai sẽ cộng thêm dòng insert
+        self.state.original_rows.len() + self.state.pending_inserts.len()
     }
 
     fn column(&self, col_ix: usize, _: &App) -> GpuiColumn {
         self.cached_columns[col_ix].clone()
+    }
+
+    fn render_tr(
+        &mut self,
+        row_ix: usize,
+        _window: &mut Window,
+        cx: &mut Context<TableState<Self>>,
+    ) -> Stateful<Div> {
+        let is_inserted = self.state.is_inserted_row(row_ix);
+        let is_deleted = self.state.is_deleted_row(row_ix);
+        let is_stripe = row_ix % 2 != 0;
+
+        div()
+            .id(("row", row_ix))
+            .relative()
+            .when(is_deleted, |this| {
+                this.child(div().absolute().inset_0().bg(cx.theme().danger))
+                    .line_through()
+                    .text_color(cx.theme().danger_foreground)
+            })
+            .when(is_inserted, |this| {
+                this.child(div().absolute().inset_0().bg(cx.theme().success))
+            })
+            .when(is_stripe, |this| this.bg(cx.theme().table_even))
     }
 
     fn render_td(
@@ -54,7 +79,7 @@ impl TableDelegate for GridDelegate {
         row_ix: usize,
         col_ix: usize,
         _window: &mut Window,
-        _cx: &mut Context<TableState<Self>>,
+        cx: &mut Context<TableState<Self>>,
     ) -> impl IntoElement {
         if let Some(EditingState {
             row,
@@ -83,42 +108,45 @@ impl TableDelegate for GridDelegate {
                 .into_any_element();
         }
 
+        let cell_val = self.state.cell_value(row_ix, col_ix);
+        let is_null = cell_val.is_none();
         let is_edited = self.state.pending_edits.contains_key(&(row_ix, col_ix));
-        let is_deleted = self.state.pending_deletes.contains(&row_ix);
 
-        let text: SharedString =
-            if let Some(new_val) = self.state.pending_edits.get(&(row_ix, col_ix)) {
-                new_val.clone().into()
-            } else {
-                self.state
-                    .original_rows
-                    .get(row_ix)
-                    .and_then(|row| row.get(col_ix))
-                    .cloned()
-                    .unwrap_or_else(|| "".into())
-            };
+        let outer = div().p_neg_2().w_full().h_full().flex().items_center();
 
-        if is_deleted {
-            div()
-                .p_neg_2()
-                .w_full()
-                .h_full()
-                .flex()
-                .items_center()
-                .child(div().line_through().text_color(gpui::red()).child(text))
-                .into_any_element()
-        } else if is_edited {
-            div()
-                .p_neg_2()
-                .w_full()
-                .h_full()
-                .flex()
-                .items_center()
-                .child(div().size_full().p_2().bg(gpui::rgb(0xfff085)).child(text))
-                .into_any_element()
-        } else {
-            text.into_any_element()
+        let mut inner = div()
+            .p_2()
+            .size_full()
+            .border_r_1()
+            .border_color(cx.theme().border);
+
+        match (is_edited, is_null) {
+            (true, true) => {
+                // Edited → NULL: yellow bg + italic "NULL"
+                inner = inner
+                    .bg(cx.theme().warning)
+                    .text_color(cx.theme().muted_foreground)
+                    .italic()
+                    .child("NULL".to_string());
+            }
+            (true, false) => {
+                // Edited → value: yellow bg + value
+                inner = inner.bg(cx.theme().warning).child(cell_val.unwrap());
+            }
+            (false, true) => {
+                // Original NULL: italic "NULL" muted
+                inner = inner
+                    .text_color(cx.theme().muted_foreground)
+                    .italic()
+                    .child("NULL".to_string());
+            }
+            (false, false) => {
+                // Original value: normal text
+                inner = inner.child(cell_val.unwrap());
+            }
         }
+
+        outer.child(inner).into_any_element()
     }
 
     fn render_empty(
@@ -129,16 +157,14 @@ impl TableDelegate for GridDelegate {
         div().into_any_element()
     }
 
+    /// Lấy text cho clipboard. NULL → "NULL" string.
+    ///
+    /// Không khuyến khích sử dụng hàm này vì nó không xử lý giá trị NULL theo đúng cách, thay vào
+    /// đó hãy sử dụng [`GridState.cell_value`]
     fn cell_text(&self, row_ix: usize, col_ix: usize, _: &App) -> String {
-        if let Some(new_val) = self.state.pending_edits.get(&(row_ix, col_ix)) {
-            return new_val.clone();
+        match self.state.cell_value(row_ix, col_ix) {
+            Some(val) => val.to_string(),
+            None => "NULL".to_string(),
         }
-
-        self.state
-            .original_rows
-            .get(row_ix)
-            .and_then(|row| row.get(col_ix))
-            .map(|val| val.to_string())
-            .unwrap_or_default()
     }
 }
