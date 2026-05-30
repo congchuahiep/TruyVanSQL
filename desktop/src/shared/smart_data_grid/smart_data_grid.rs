@@ -90,12 +90,15 @@ impl SmartDataGrid {
             .has_displayable_data();
 
         let (query, table_name): (String, Option<SharedString>) = match data_source {
-            GridDataSource::Table { source_table } => {
-                let state = &self.table.read(cx).delegate().state;
+            GridDataSource::Table {
+                source_table,
+                limit,
+                offset,
+            } => {
                 let table_name = source_table.clone();
                 let query = format!(
                     "SELECT * FROM \"{}\" LIMIT {} OFFSET {}",
-                    table_name, state.limit, state.offset
+                    table_name, limit, offset
                 );
                 (query, Some(table_name))
             }

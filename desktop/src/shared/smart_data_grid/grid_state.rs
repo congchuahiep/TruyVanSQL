@@ -15,8 +15,6 @@ pub struct GridState {
     pub pending_deletes: HashSet<usize>,
     pub pending_inserts: Vec<Vec<Option<SharedString>>>,
 
-    pub limit: usize,
-    pub offset: usize,
     pub total_rows: Option<usize>,
 
     /// Trạng thái fetch data, dùng để xác định có thể hiển thị data từ GridState không?
@@ -40,8 +38,6 @@ impl GridState {
             pending_edits: HashMap::new(),
             pending_deletes: HashSet::new(),
             pending_inserts: Vec::new(),
-            limit: 1000,
-            offset: 0,
             total_rows: None,
             fetch_state: GridFetchState::Idle,
             editing_state: None,
@@ -66,7 +62,7 @@ impl GridState {
     /// Lấy tên bảng nguồn của grid (nếu có)
     pub fn source_table(&self) -> Option<SharedString> {
         match &self.data_source {
-            GridDataSource::Table { source_table } => Some(source_table.clone()),
+            GridDataSource::Table { source_table, .. } => Some(source_table.clone()),
             GridDataSource::Query { source_table, .. } => source_table.clone(),
         }
     }
@@ -154,7 +150,11 @@ pub struct EditingState {
 #[derive(Clone, Debug)]
 pub enum GridDataSource {
     /// TableViewer: data từ 1 bảng, có phân trang, thêm dòng
-    Table { source_table: SharedString },
+    Table {
+        source_table: SharedString,
+        limit: usize,
+        offset: usize,
+    },
     /// SQL Editor: data từ query tùy ý, không phân trang
     Query {
         source_table: Option<SharedString>,

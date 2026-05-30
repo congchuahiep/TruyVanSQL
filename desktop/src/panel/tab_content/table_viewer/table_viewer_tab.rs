@@ -28,6 +28,8 @@ impl TableViewerTab {
                 client.clone(),
                 GridDataSource::Table {
                     source_table: table_name.clone(),
+                    limit: 1000,
+                    offset: 0,
                 },
                 window,
                 cx,
