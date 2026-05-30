@@ -51,7 +51,7 @@ impl TabItem for TableViewerTab {
         TabInfo {
             title: self.table_name.clone().into(),
             is_dirty: state.has_pending_changes(),
-            is_loading: state.is_loading,
+            is_loading: state.fetch_state.is_loading(),
             icon: AppIcon::Table,
         }
     }

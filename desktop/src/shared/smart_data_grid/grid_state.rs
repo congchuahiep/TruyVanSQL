@@ -1,4 +1,4 @@
-use crate::shared::smart_data_grid::GridError;
+use super::GridFetchState;
 use engine::Column;
 use gpui::SharedString;
 use std::collections::{HashMap, HashSet};
@@ -18,8 +18,14 @@ pub struct GridState {
     pub limit: usize,
     pub offset: usize,
     pub total_rows: Option<usize>,
-    pub error: GridError,
-    pub is_loading: bool,
+
+    /// Trạng thái fetch data, dùng để xác định có thể hiển thị data từ GridState không?
+    ///
+    /// - [`GridFetchState::Idle`]: Không có data đang được fetch
+    /// - [`GridFetchState::Loading`]: Đang fetch data
+    /// - [`GridFetchState::Loaded`]: Fetch data thành công
+    /// - [`GridFetchState::Error`]: Fetch data thất bại
+    pub fetch_state: GridFetchState,
 
     pub editing_state: Option<EditingState>,
 }
@@ -37,8 +43,7 @@ impl GridState {
             limit: 1000,
             offset: 0,
             total_rows: None,
-            error: GridError::None,
-            is_loading: false,
+            fetch_state: GridFetchState::Idle,
             editing_state: None,
         }
     }

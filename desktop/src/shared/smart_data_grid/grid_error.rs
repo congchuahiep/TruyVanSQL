@@ -10,17 +10,15 @@ pub enum StageError {
     NoActiveEdit,
 }
 
-// GridError: UI state enum — quyết định cách hiển thị lỗi trên grid
 #[derive(Clone, Debug)]
 pub enum GridError {
-    /// Lỗi nghiêm trọng (không load được bảng)
+    /// Lỗi nghiêm trọng (không load được bảng), thường sử dụng khi bảng không thể load được lúc
+    /// khởi tạo
     Fatal(SharedString),
     /// Lỗi xảy ra khi refresh không thành công
     Refresh(SharedString),
     /// Lỗi commit changes
     Commit(SharedString),
-    /// Không bị gì cả
-    None,
 }
 
 impl GridError {
@@ -33,7 +31,6 @@ impl GridError {
     pub fn message(&self) -> SharedString {
         match self {
             GridError::Fatal(msg) | GridError::Refresh(msg) | GridError::Commit(msg) => msg.clone(),
-            GridError::None => SharedString::new(""),
         }
     }
 }

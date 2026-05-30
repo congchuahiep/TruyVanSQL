@@ -1,6 +1,7 @@
-use crate::shared::smart_data_grid::{GridDataSource, GridError};
-
-use super::{DataChangesetBuilder, EditingState, GridDelegate, GridState, StageError};
+use super::{
+    DataChangesetBuilder, EditingState, GridDataSource, GridDelegate, GridError, GridFetchState,
+    GridState, StageError,
+};
 use assets::AppIcon;
 use engine::{Column, QueryResult, Row, SqlClient};
 use gpui::prelude::FluentBuilder;
@@ -76,17 +77,17 @@ impl SmartDataGrid {
     /// - [`GridDataSource::Table`]: Truy vấn dữ liệu từ bảng cơ sở dữ liệu.
     /// - [`GridDataSource::Query`]: Truy vấn dữ liệu từ câu lệnh SQL tùy chỉnh.
     pub fn load(&mut self, cx: &mut Context<Self>) {
-        self.set_loading(true, cx);
+        self.set_fetch_state(GridFetchState::Loading, cx);
 
         let client = self.client.clone();
         let data_source = &self.table.read(cx).delegate().state.data_source;
-        let has_existing_data = !self
+        let had_data = self
             .table
             .read(cx)
             .delegate()
             .state
-            .original_rows
-            .is_empty();
+            .fetch_state
+            .has_displayable_data();
 
         let (query, table_name): (String, Option<SharedString>) = match data_source {
             GridDataSource::Table { source_table } => {
@@ -116,21 +117,26 @@ impl SmartDataGrid {
                         table_info.inspect(|table_info| {
                             grid.set_primary_keys(table_info.primary_key.columns.clone(), cx)
                         });
+
+                        grid.set_fetch_state(GridFetchState::Loaded, cx);
                     }
                     Ok(QueryResult::Execution { .. }) => {
                         panic!("Trường hợp này không thể xảy ra >:(")
                     }
                     Err(e) => {
-                        // WARN: Cơ chế đúng sẽ là check initial load thì quăng lỗi Fatal (có thể là
-                        // thêm flag nhưng sẽ bị rườm rà), nên là tạm thời làm thế này cũng được
-                        match has_existing_data {
-                            true => grid.set_error(GridError::Refresh(e.to_string().into()), cx),
-                            false => grid.set_error(GridError::Fatal(e.to_string().into()), cx),
+                        match had_data {
+                            true => grid.set_fetch_state(
+                                GridFetchState::Error(GridError::Refresh(e.to_string().into())),
+                                cx,
+                            ),
+                            false => grid.set_fetch_state(
+                                GridFetchState::Error(GridError::Fatal(e.to_string().into())),
+                                cx,
+                            ),
                         }
                         eprintln!("{}", e);
                     }
                 };
-                grid.set_loading(false, cx);
             })
         })
         .detach();
@@ -176,18 +182,10 @@ impl SmartDataGrid {
         cx.notify();
     }
 
-    /// Đặt trạng thái loading cho Grid
-    pub fn set_loading(&mut self, is_loading: bool, cx: &mut Context<Self>) {
+    /// Đặt trạng thái fetch cho Grid (Idle, Loading, Loaded, Error)
+    pub fn set_fetch_state(&mut self, state: GridFetchState, cx: &mut Context<Self>) {
         self.table.update(cx, |table, _| {
-            table.delegate_mut().state.is_loading = is_loading;
-        });
-        cx.notify();
-    }
-
-    /// Đặt lỗi cho Grid
-    pub fn set_error(&mut self, error: GridError, cx: &mut Context<Self>) {
-        self.table.update(cx, |table, _| {
-            table.delegate_mut().state.error = error;
+            table.delegate_mut().state.fetch_state = state;
         });
         cx.notify();
     }
@@ -203,7 +201,7 @@ impl SmartDataGrid {
         let delegate = self.table.read(cx).delegate();
         let state = &delegate.state;
 
-        if state.is_loading
+        if state.fetch_state.is_loading()
             || !state.can_edit()
             || state.editing_state.as_ref().is_some_and(
                 |EditingState {
@@ -508,7 +506,7 @@ impl SmartDataGrid {
 
         let is_editable = state.can_edit();
         let has_changes = state.has_pending_changes();
-        let is_loading = state.is_loading;
+        let is_loading = state.fetch_state.is_loading();
 
         let commit_changes_button = ButtonCustomVariant::new(cx)
             .color(cx.theme().green)
@@ -627,7 +625,7 @@ impl SmartDataGrid {
 impl Render for SmartDataGrid {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.table.read(cx).delegate().state.clone();
-        let is_loading = state.is_loading;
+        let is_loading = state.fetch_state.is_loading();
 
         v_flex()
             .key_context("data-grid-container")
@@ -654,7 +652,7 @@ impl Render for SmartDataGrid {
                     .when(is_loading, |this| this.opacity(0.5))
                     // Hiển thị error view
                     .when_else(
-                        state.error.is_fatal(),
+                        state.fetch_state.is_fatal(),
                         |this| {
                             this.child(
                                 v_flex().size_full().items_center().justify_center().child(
@@ -677,7 +675,13 @@ impl Render for SmartDataGrid {
                                             div()
                                                 .text_sm()
                                                 .text_color(cx.theme().muted_foreground)
-                                                .child(state.error.message()),
+                                                .child(
+                                                    state
+                                                        .fetch_state
+                                                        .as_error()
+                                                        .map(|e| e.message())
+                                                        .unwrap_or_default(),
+                                                ),
                                         ),
                                 ),
                             )
